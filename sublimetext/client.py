@@ -4,6 +4,8 @@
 from re import findall
 import socket
 import logging
+import json
+from random import random
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -53,6 +55,20 @@ def create_rpc_message(message: str) -> bytes:
     content_encoded = message.encode("utf-8")
     header = "Content-Length: %s" % (len(content_encoded))
     return b"%s%s%s" % (header.encode("ascii"), RPC_SEPARATOR, content_encoded)
+
+
+class RequestMessage:
+    """Request message helper"""
+
+    def __init__(self, method: str, params: "Optional[Any]" = None) -> None:
+        self.id = str(random())
+        self.method = method
+        self.params = params
+
+    def to_rpc(self) -> str:
+        """convert to rpc message"""
+        message = {"id": self.id, "method": self.method, "params": self.params}
+        return json.dumps(message)
 
 
 class Service:

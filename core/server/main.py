@@ -81,7 +81,7 @@ class Server:
             conn, addr = s.accept()
             with conn:
                 print("Connected by", addr)
-                recv = b""                
+                recv = b""
                 while True:
                     data = conn.recv(1024)
                     try:
@@ -100,7 +100,7 @@ class Server:
                 # default result
                 result = r'{"jsonrpc":"2.0","id":null,"\
                     "error":{"code":1,"message":"invalid request"}}'
-                
+
                 try:
                     result = callback(content)
                 except Exception:
@@ -126,8 +126,14 @@ class Server:
         id_ = parsed.id
 
         # TODO: ADD RESPONSE ERROR HANDLER
-        results = self.service[parsed.method](parsed.params)
+        results = None
         error = None
+        try:
+            results = self.service[parsed.method](parsed.params)
+        except (json.JSONDecodeError, KeyError):
+            error = "invalid message"
+        except Exception:
+            error = "some error"
 
         response = {"id": id_, "results": results, "error": error}
         return json.dumps(response)
@@ -143,9 +149,22 @@ class Server:
                 break
             Server.listen(self.do)
 
+    def ping(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+        logger.info("ping\nmessage = %s", params)
+        return params
+
+    def exit(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+        logger.info("exit")
+        self.next = False
+        return None
+
 
 def main():
-    pass
+    server = Server()
+    server.register_service("ping", server.ping)
+    server.register_service("exit", server.exit)
+
+    server.main_loop()
 
 
 if __name__ == "__main__":
