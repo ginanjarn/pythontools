@@ -6,6 +6,9 @@ import json
 import socket
 import logging
 
+# TODO: Clean up later
+from . import service
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
@@ -20,6 +23,10 @@ class ContentIncomplete(ValueError):
 
 class ContentOverflow(ValueError):
     """Content too large"""
+
+
+class InvalidParams(KeyError):
+    """unable to get required params"""
 
 
 RPC_SEPARATOR = b"\r\n\r\n"
@@ -74,7 +81,7 @@ class Server:
         callback: "Callable[[str],str]", host: str = "127.0.0.1", port: int = 8088
     ) -> None:
         """listen socket request"""
-        # TODO: ADD SOCKET LISTENER-----
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((host, port))
             s.listen()
@@ -125,15 +132,22 @@ class Server:
         parsed = RequestMessage.from_rpc(message)
         id_ = parsed.id
 
-        # TODO: ADD RESPONSE ERROR HANDLER
         results = None
         error = None
         try:
             results = self.service[parsed.method](parsed.params)
-        except (json.JSONDecodeError, KeyError):
-            error = "invalid message"
-        except Exception:
-            error = "some error"
+        except json.JSONDecodeError as err:
+            logger.debug("invalid params", exc_info=True)
+            error = "invalid message : %s" % (str(err))
+        except InvalidParams as err:
+            logger.debug("invalid params", exc_info=True)
+            error = "invalid params : %s" % (str(err))
+        except KeyError as err:
+            logger.debug("method not found", exc_info=True)
+            error = "method not found : %s" % (str(err))
+        except Exception as err:
+            logger.error("internal error", exc_info=True)
+            error = "internal error : %s" % (str(err))
 
         response = {"id": id_, "results": results, "error": error}
         return json.dumps(response)
@@ -158,11 +172,32 @@ class Server:
         self.next = False
         return None
 
+    def completion(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+        # TODO: build schenario
+        path = None
+        proj = None
+        try:
+            src = params["uri"]
+            line = params["location"]["line"]
+            character = params["location"]["character"]
+
+            line += 1  # jedi use 1 based index
+            result = service.complete(
+                source=src, line=line, column=character, path=path, project=proj
+            )
+        except KeyError as err:
+            raise InvalidParams(str(err)) from err
+        except ValueError as err:
+            raise InvalidParams(str(err)) from err
+        else:
+            return result
+
 
 def main():
     server = Server()
     server.register_service("ping", server.ping)
     server.register_service("exit", server.exit)
+    server.register_service("textDocument.completion", server.completion)
 
     server.main_loop()
 

@@ -244,3 +244,9 @@ class Service:
 
     def complete(self, src: str, line: str, character: str) -> "Dict[str, str]":
         """get sublime formatted completion data"""
+        message = RequestMessage("textDocument.completion")
+        message.params = {
+            "uri": src,
+            "location": {"line": line, "character": character},
+        }
+        return self.request_task(message.to_rpc())
