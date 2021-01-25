@@ -250,3 +250,12 @@ class Service:
             "location": {"line": line, "character": character},
         }
         return self.request_task(message.to_rpc())
+
+    def hover(self, src: str, line: str, character: str) -> "Dict[str, str]":
+        """get sublime formatted documentation data"""
+        message = RequestMessage("textDocument.hover")
+        message.params = {
+            "uri": src,
+            "location": {"line": line, "character": character},
+        }
+        return self.request_task(message.to_rpc())

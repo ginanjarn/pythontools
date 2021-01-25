@@ -192,12 +192,33 @@ class Server:
         else:
             return result
 
+    def hover(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+        # TODO: build schenario
+        path = None
+        proj = None
+        try:
+            src = params["uri"]
+            line = params["location"]["line"]
+            character = params["location"]["character"]
+
+            line += 1  # jedi use 1 based index
+            result = service.get_documentation(
+                source=src, line=line, column=character, path=path, project=proj
+            )
+        except KeyError as err:
+            raise InvalidParams(str(err)) from err
+        except ValueError as err:
+            raise InvalidParams(str(err)) from err
+        else:
+            return result
+
 
 def main():
     server = Server()
     server.register_service("ping", server.ping)
     server.register_service("exit", server.exit)
     server.register_service("textDocument.completion", server.completion)
+    server.register_service("textDocument.hover", server.hover)
 
     server.main_loop()
 
