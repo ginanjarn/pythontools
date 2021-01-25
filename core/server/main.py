@@ -212,6 +212,18 @@ class Server:
         else:
             return result
 
+    def document_format(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+        # TODO: build schenario
+        try:
+            src = params["uri"]
+            result = service.format_document(src)
+        except KeyError as err:
+            raise InvalidParams(str(err)) from err
+        except ValueError as err:
+            raise InvalidParams(str(err)) from err
+        else:
+            return result
+
 
 def main():
     server = Server()
@@ -219,6 +231,7 @@ def main():
     server.register_service("exit", server.exit)
     server.register_service("textDocument.completion", server.completion)
     server.register_service("textDocument.hover", server.hover)
+    server.register_service("textDocument.formatting", server.document_format)
 
     server.main_loop()
 

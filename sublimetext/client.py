@@ -259,3 +259,9 @@ class Service:
             "location": {"line": line, "character": character},
         }
         return self.request_task(message.to_rpc())
+
+    def document_format(self, src: str) -> "Dict[str, str]":
+        """get sublime formatted PEP formatted data"""
+        message = RequestMessage("textDocument.formatting")
+        message.params = {"uri": src}
+        return self.request_task(message.to_rpc())
