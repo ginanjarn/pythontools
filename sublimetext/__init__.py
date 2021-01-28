@@ -113,5 +113,9 @@ class ClientHelper:
 
     @runnable
     def change_workspace(self, view, path=None):
-        path = os.path.dirname(view.file_name()) if path is None else path
-        self.service.change_workspace(path)
+        try:
+            path = os.path.dirname(view.file_name()) if path is None else path
+        except TypeError:
+            pass
+        else:
+            self.service.change_workspace(path)
