@@ -2,11 +2,12 @@
 
 import threading
 import sublime
+import os
 from .client import Service
 from . import document
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("sublime __init__")
 logger.setLevel(logging.DEBUG)
 
 
@@ -35,7 +36,8 @@ class ClientHelper:
         self.service.exit()
 
     @runnable
-    def fetch_completion(self, view, location):
+    def fetch_completion(self, view,prefix, location):
+        self.completion_prefix = prefix
         if self.service.server_error:   # cancel all request if server error
             return
         # fetch completion
@@ -109,4 +111,7 @@ class ClientHelper:
         # view.run_command("pytools_format")
         pass
 
-
+    @runnable
+    def change_workspace(self, view, path=None):
+        path = os.path.dirname(view.file_name()) if path is None else path
+        self.service.change_workspace(path)

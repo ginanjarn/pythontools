@@ -122,6 +122,8 @@ class Server:
         self.capability = []
         self.next = True
 
+        self.workspace_directory = ""
+
     def register_service(
         self, method: str, callback: "Callback[Dict[str, Any]Optional[Any]]"
     ) -> None:
@@ -177,7 +179,7 @@ class Server:
     def completion(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         # TODO: build schenario
         path = ""
-        proj = None
+        proj = None if not self.workspace_directory else service.jedi_project(self.workspace_directory)
         try:
             src = params["uri"]
             line = params["location"]["line"]
@@ -197,7 +199,7 @@ class Server:
     def hover(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         # TODO: build schenario
         path = ""
-        proj = None
+        proj = None if not self.workspace_directory else service.jedi_project(self.workspace_directory)
         try:
             src = params["uri"]
             line = params["location"]["line"]
@@ -226,6 +228,18 @@ class Server:
         else:
             return result
 
+    def change_workspace(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+        # TODO: build schenario
+        try:
+            path = params["uri"]
+            self.workspace_directory = path
+        except KeyError as err:
+            raise InvalidParams(str(err)) from err
+        except ValueError as err:
+            raise InvalidParams(str(err)) from err
+        else:
+            return {"workspace_directory": self.workspace_directory}
+
 
 def main():
     server = Server()
@@ -234,6 +248,7 @@ def main():
     server.register_service("textDocument.completion", server.completion)
     server.register_service("textDocument.hover", server.hover)
     server.register_service("textDocument.formatting", server.document_format)
+    server.register_service("document.changeWorkspace", server.change_workspace)
 
     server.main_loop()
 

@@ -32,14 +32,20 @@ class PyTools(sublime_plugin.EventListener, ClientHelper):
         location = locations[0]
         if not valid_attribute(view, location):
             return
+        
+        def completon_build(completion):
+            return (
+                completion, sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS
+                )
+
         if self.completion:
-            completion = self.completion
+            completion = self.completion if prefix.startswith(self.completion_prefix) else None
             self.completion = None
-            return completion
+            return completon_build(completion)
         else:
-            thread = threading.Thread(target=self.fetch_completion, args=(view, location))
+            thread = threading.Thread(target=self.fetch_completion, args=(view, prefix, location))
             thread.start()
-        pass
+        
 
     def on_hover(self, view, point, hover_zone):
         if not valid_attribute(view, point):
@@ -49,6 +55,15 @@ class PyTools(sublime_plugin.EventListener, ClientHelper):
             thread = threading.Thread(target=self.fetch_documentation, args=(view,point))
             thread.start()
         pass
+
+    def on_activated(self, view):
+        if not valid_source(view):
+            return
+        print(self.service.server_online)
+        if self.service.server_online:
+            logger.debug("server server_online")
+            view.run_command("pytools_set_workspace")
+
 
 
 class PytoolsFormatCommand(sublime_plugin.TextCommand):
@@ -68,6 +83,26 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
         # thread = threading.Thread(target=self.format_code, args=(view, edit))
         # thread.start()
         helper.format_code(view, edit)
+        pass
+
+class PytoolsSetWorkspaceCommand(sublime_plugin.TextCommand):
+    """Formatting command"""
+    def run(self, edit, path=None):
+        view = self.view
+        if not valid_source(view):
+            return
+
+        # if any(self.formatted_changes):
+        #     document.apply_changes(view, edit, self.formatted_changes)
+        #     self.formatted_changes = ""
+        #     return
+
+        helper = ClientHelper()
+        # thread = threading.Thread(target=helper.format_code, args=(view, edit))
+        # thread = threading.Thread(target=self.format_code, args=(view, edit))
+        # thread.start()
+        helper.change_workspace(view, path)
+        logger.debug("change change_workspace")
         pass
 
 class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):

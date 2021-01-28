@@ -2,6 +2,15 @@
 
 
 from jedi import Script, Project
+import logging
+
+logger = logging.getLogger("formatting")
+logger.setLevel(logging.DEBUG)
+sh = logging.StreamHandler()
+sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+sh.setLevel(logging.DEBUG)
+logger.addHandler(sh)
+
 
 
 def get_project(path: str) -> "Project":
@@ -23,6 +32,7 @@ def complete(source: str, line: int, column: int, **kwargs) -> "Any":
     """complete script at following pos(line, column)"""
     project = kwargs.get("project", None)
     path = kwargs.get("path","")
+    logger.debug(project)
     script = Script(code=source, path=path, project=project)
     results = script.complete(line=line, column=column)
     raw = kwargs.get("raw", None)

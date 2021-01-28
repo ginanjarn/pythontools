@@ -209,6 +209,7 @@ class Service:
         # busy
         self.busy = False
 
+
     def run_server(self, sys_env=None):
         """running server thread"""
         if self.server_online:
@@ -250,6 +251,7 @@ class Service:
                 self.run_server()
                 return self.request_task(v_message)
         else:
+            self.server_online = True
             return result
         finally:
             self.busy = False
@@ -296,6 +298,16 @@ class Service:
         """get sublime formatted PEP formatted data"""
         message = RequestMessage("textDocument.formatting")
         message.params = {"uri": src}
+        response = self.request_task(message.to_rpc())
+        response_message = ResponseMessage.from_rpc(response)
+        if response_message.resp_id == message.req_id:
+            return response_message.results
+
+    def change_workspace(self, workspace_dir: str):
+        """change workspace directory"""        
+
+        message = RequestMessage("document.changeWorkspace")
+        message.params = {"uri": workspace_dir}
         response = self.request_task(message.to_rpc())
         response_message = ResponseMessage.from_rpc(response)
         if response_message.resp_id == message.req_id:
