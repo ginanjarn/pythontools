@@ -13,6 +13,9 @@ def get_project(path: str) -> "Project":
 def render_html(docs: str) -> str:
     """render docstring to html"""
 
+    if not docs:
+        return
+
     def wrap_paragraph(doc: str):
         """wrap paragraph with 'p' tag"""
         return "".join(["<p>%s</p>" % par for par in doc.split("\n\n")])

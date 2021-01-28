@@ -60,22 +60,48 @@ def get_rpc_content(message: bytes) -> str:
 def create_rpc_message(message: str) -> bytes:
     """create rpc message"""
     content_encoded = message.encode("utf-8")
-    header = "Content-Length: %s" % (len(content_encoded))
-    return b"%s%s%s" % (header.encode("ascii"), RPC_SEPARATOR, content_encoded)
+    logger.debug(content_encoded)
+    header = "Content-Length: %s"%(len(content_encoded))
+    header_encoded = header.encode("ascii")
+    logger.debug(header_encoded)
+    encoded = header_encoded + RPC_SEPARATOR + content_encoded
+    logger.debug(encoded)
+    return encoded
 
 
 class RequestMessage:
     """Request message helper"""
 
     def __init__(self, method: str, params: "Optional[Any]" = None) -> None:
-        self.id = str(random())
+        self.req_id = str(random())
         self.method = method
         self.params = params
 
+    def __repr__(self)->str:
+        return "id : {req_id}, method : {method}, params : {params}".format(
+            req_id=self.req_id, method=self.method, params=self.params)
+
     def to_rpc(self) -> str:
         """convert to rpc message"""
-        message = {"id": self.id, "method": self.method, "params": self.params}
+        message = {"id": self.req_id, "method": self.method, "params": self.params}
         return json.dumps(message)
+
+class ResponseMessage:
+    """Response message helper"""
+
+    def __init__(self, resp_id: str, results: "Optional[Any]" = None, error: "Optional[Any]" = None) -> None:
+        self.resp_id = resp_id
+        self.results = results
+        self.error = error
+
+    def __repr__(self)->str:
+        return "id : {resp_id}, results : {results}, error : {error}".format(
+            resp_id=self.req_id, results=self.results, error=self.error)
+
+    @classmethod
+    def from_rpc(cls, message):
+        parsed = json.loads(message)
+        return cls(parsed["id"],parsed["results"],parsed["error"])
 
 
 class Service:
@@ -166,6 +192,9 @@ class Service:
                     "server error\n%s", serr.decode().replace(os.linesep, "\n")
                 )
                 raise ServerError
+        except FileNotFoundError:
+            logger.exception("python not found in path", exc_info=True)
+            raise ServerError from None
         except OSError:
             logger.debug("OSError")
         except Exception:
@@ -196,17 +225,7 @@ class Service:
 
         thread = threading.Thread(target=server_task, args=(self, sys_env))
         if not self.server_online:
-            thread.start()
-
-    def runnable(self, func):
-        """safe thread single request decorator"""
-
-        def wrapper(*args, **kwargs):
-            return (
-                None if (self.busy or not self.server_online) else func(*args, *kwargs)
-            )
-
-        return wrapper
+            thread.start()    
 
     def reload_server(self):
         """reload server"""
@@ -219,6 +238,8 @@ class Service:
             v_message = message.to_rpc()
         else:
             v_message = message
+
+        logger.debug(v_message)
 
         try:
             self.busy = True
@@ -240,7 +261,11 @@ class Service:
     def exit(self, *args):
         # exit server
         self.server_online = False
-        return self.request_task(RequestMessage("exit", args))
+        message = RequestMessage("exit", args)
+        response = self.request_task(message)
+        response_message = ResponseMessage.from_rpc(response)
+        if response_message.resp_id == message.req_id:
+            return response_message.results
 
     def complete(self, src: str, line: str, character: str) -> "Dict[str, str]":
         """get sublime formatted completion data"""
@@ -249,7 +274,10 @@ class Service:
             "uri": src,
             "location": {"line": line, "character": character},
         }
-        return self.request_task(message.to_rpc())
+        response = self.request_task(message.to_rpc())
+        response_message = ResponseMessage.from_rpc(response)
+        if response_message.resp_id == message.req_id:
+            return response_message.results
 
     def hover(self, src: str, line: str, character: str) -> "Dict[str, str]":
         """get sublime formatted documentation data"""
@@ -258,10 +286,17 @@ class Service:
             "uri": src,
             "location": {"line": line, "character": character},
         }
-        return self.request_task(message.to_rpc())
+        logger.debug(message)
+        response = self.request_task(message.to_rpc())
+        response_message = ResponseMessage.from_rpc(response)
+        if response_message.resp_id == message.req_id:
+            return response_message.results
 
     def document_format(self, src: str) -> "Dict[str, str]":
         """get sublime formatted PEP formatted data"""
         message = RequestMessage("textDocument.formatting")
         message.params = {"uri": src}
-        return self.request_task(message.to_rpc())
+        response = self.request_task(message.to_rpc())
+        response_message = ResponseMessage.from_rpc(response)
+        if response_message.resp_id == message.req_id:
+            return response_message.results

@@ -7,7 +7,9 @@ import socket
 import logging
 
 # TODO: Clean up later
+# import service
 from . import service
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -174,7 +176,7 @@ class Server:
 
     def completion(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         # TODO: build schenario
-        path = None
+        path = ""
         proj = None
         try:
             src = params["uri"]
@@ -194,7 +196,7 @@ class Server:
 
     def hover(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         # TODO: build schenario
-        path = None
+        path = ""
         proj = None
         try:
             src = params["uri"]

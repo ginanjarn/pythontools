@@ -57,59 +57,52 @@ def format_with_black(source: str) -> str:
     return sout.decode()
 
 
-def to_rpc(changes: str, old_source: str):
+def to_rpc(changes_diff: str, old_source: str):
     """convert changes to rpc"""
 
     def get_removed(line: str) -> "Tuple[int,int]":
-        """get zero based removed line"""
+        """get diff removed line"""
         found = re.findall(r"@@ \-(\d*),?(\d*)\s.*@@", line)
         if not any(found):
             raise ValueError("unable to parse diff header", line)
         start_str = found[0][0]
         span_str = found[0][1]
-        start = int(start_str) - 1
-        span = int(span_str) - 2 if span_str else 0
+        start = int(start_str)
+        span = int(span_str) - 1 if span_str else 0
         end = start + span
         return start, end
 
-    def change_object(changes: str, old_source: str):
-        old_lines = old_source.splitlines()
-        change_lines = changes.splitlines()
-        for line in change_lines:
+    def change_gen(changes_diff,old_source):
+        olds = old_source.splitlines()
+        for line in changes_diff.splitlines():
             if line.startswith("@@"):
-                # get removed line
-                start, end = get_removed(line)
-                # get removed start line offset
-                start_character = 0
-                # get removed end line offset
-                end_character = len(old_lines[end])
-                yield {
-                    "range": {
-                        "start": {"line": start, "character": start_character},
-                        "end": {"line": end, "character": end_character},
-                    },
-                    "newText": "",
-                }
+                start_line, end_line = get_removed(line)
+                yield {"range":{"start":{"line":start_line,"character":0},
+                    "end":{"line":end_line,"character":len(olds[end_line-1])}}}
             elif line.startswith("-"):
                 continue
-            else:
+            elif line.startswith("+"):
                 yield line[1:]
+            elif line.startswith(" "):
+                yield line[1:]
+            else:
+                continue
 
-    rpc_change, index = [], -1
-
-    for change in change_object(changes, old_source):
+    changes = []
+    index = -1
+    for change in change_gen(changes_diff, old_source):
         if isinstance(change, dict):
-            rpc_change.append(change)
+            changes.append(change)
             index += 1
         else:
-            if not rpc_change:
-                continue
+            if not changes:     # for list
+                continue 
+            new_text = changes[index].get("newText")
+            if new_text is None:
+                changes[index]["newText"] = change
             else:
-                rpc_change[index]["newText"] = "\n".join(
-                    [rpc_change[index]["newText"], change]
-                )
-
-    return rpc_change
+                changes[index]["newText"] = "\n".join([new_text, change])
+    return changes
 
 
 def format_document(source: str, **kwargs) -> "Dict[str, Any]":
