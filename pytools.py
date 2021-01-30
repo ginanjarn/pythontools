@@ -23,6 +23,7 @@ def valid_source(view, pos=0):
 def valid_attribute(view, pos):
     result = view.match_selector(pos,"source.python")
     result = not view.match_selector(pos,"comment") and result
+    result = not view.match_selector(pos,"string") and result
     return result
 
 class PyTools(sublime_plugin.EventListener, ClientHelper):
@@ -31,9 +32,11 @@ class PyTools(sublime_plugin.EventListener, ClientHelper):
     def on_query_completions(self, view, prefix, locations):
         location = locations[0]
         if not valid_attribute(view, location):
-            return
+            return None
         
         def completon_build(completion):
+            if not completion:
+                return
             return (
                 completion, sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS
                 )
@@ -59,7 +62,7 @@ class PyTools(sublime_plugin.EventListener, ClientHelper):
     def on_activated(self, view):
         if not valid_source(view):
             return
-        print(self.service.server_online)
+            
         if self.service.server_online:
             logger.debug("server server_online")
             view.run_command("pytools_set_workspace")

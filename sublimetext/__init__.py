@@ -8,7 +8,7 @@ from . import document
 import logging
 
 logger = logging.getLogger("sublime __init__")
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 
 
 process_lock = threading.Lock()
@@ -44,7 +44,7 @@ class ClientHelper:
         start = 0
         end = location
         word_region = view.word(location)           
-        if view.substr(word_region).isidentifier():
+        if view.substr(word_region).isidentifier() and len(prefix) > 1:
             end = word_region.a  # complete at first identifier offset
         source_region = sublime.Region(start, end)
         line, character = view.rowcol(end)  # get rowcol at end selection
