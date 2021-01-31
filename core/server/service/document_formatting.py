@@ -73,10 +73,11 @@ def to_rpc(changes_diff: str, old_source: str):
         return start, end
 
     def change_gen(changes_diff,old_source):
-        olds = old_source.splitlines()
+        olds = old_source.split("\n")
         for line in changes_diff.splitlines():
             if line.startswith("@@"):
                 start_line, end_line = get_removed(line)
+                logger.debug(line)
                 yield {"range":{"start":{"line":start_line,"character":0},
                     "end":{"line":end_line,"character":len(olds[end_line-1])}}}
             elif line.startswith("-"):
