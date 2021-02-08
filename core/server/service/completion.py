@@ -1,7 +1,9 @@
 """Completion module"""
 
 
-from jedi import Script, Project
+from jedi.api import Completion  # type: ignore
+from jedi import Script, Project  # type: ignore
+from typing import Dict, Any, List, Iterator
 import logging
 
 logger = logging.getLogger("formatting")

@@ -34,12 +34,21 @@ class ServerError(Exception):
     """Unable to run server"""
 
 
+class ServerOffline(ConnectionError):
+    """Server offline"""
+
+
 RPC_SEPARATOR = b"\r\n\r\n"
 
 
 def get_rpc_content(message: bytes) -> str:
     """get rpc content"""
-    header, content = message.split(RPC_SEPARATOR)
+
+    splitted_messages = message.split(RPC_SEPARATOR)
+    if len(splitted_messages) != 2:
+        raise InvalidResponse
+
+    header, content = splitted_messages
 
     def get_content_length(header: bytes) -> int:
         """get content length"""
@@ -59,9 +68,10 @@ def get_rpc_content(message: bytes) -> str:
 
 def create_rpc_message(message: str) -> bytes:
     """create rpc message"""
+
     content_encoded = message.encode("utf-8")
     logger.debug(content_encoded)
-    header = "Content-Length: %s"%(len(content_encoded))
+    header = "Content-Length: %s" % (len(content_encoded))
     header_encoded = header.encode("ascii")
     logger.debug(header_encoded)
     encoded = header_encoded + RPC_SEPARATOR + content_encoded
@@ -77,48 +87,53 @@ class RequestMessage:
         self.method = method
         self.params = params
 
-    def __repr__(self)->str:
+    def __repr__(self) -> str:
         return "id : {req_id}, method : {method}, params : {params}".format(
-            req_id=self.req_id, method=self.method, params=self.params)
+            req_id=self.req_id, method=self.method, params=self.params
+        )
 
     def to_rpc(self) -> str:
         """convert to rpc message"""
         message = {"id": self.req_id, "method": self.method, "params": self.params}
         return json.dumps(message)
 
+
 class ResponseMessage:
     """Response message helper"""
 
-    def __init__(self, resp_id: str, results: "Optional[Any]" = None, error: "Optional[Any]" = None) -> None:
+    def __init__(
+        self,
+        resp_id: str,
+        results: "Optional[Any]" = None,
+        error: "Optional[Any]" = None,
+    ) -> None:
         self.resp_id = resp_id
         self.results = results
         self.error = error
 
-    def __repr__(self)->str:
+    def __repr__(self) -> str:
         return "id : {resp_id}, results : {results}, error : {error}".format(
-            resp_id=self.req_id, results=self.results, error=self.error)
+            resp_id=self.resp_id, results=self.results, error=self.error
+        )
 
     @classmethod
     def from_rpc(cls, message):
         parsed = json.loads(message)
-        return cls(parsed["id"],parsed["results"],parsed["error"])
+        return cls(parsed["id"], parsed["results"], parsed["error"])
 
 
-class Service:
-    """client service handler"""
+def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
+    """handle socket request
 
-    @staticmethod
-    def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
-        """handle socket request
-
-        Raises:
-            ConnectionError
-            InvalidResponse
-            """
+    Raises:
+        ConnectionError
+        InvalidResponse
+    """
+    try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
             conn.connect((host, port))
             conn.sendall(create_rpc_message(message))
-
+    
             result = ""
             recv = b""
             while True:
@@ -135,180 +150,165 @@ class Service:
                     logger.debug(content)
                     result = content
                     break
-
+    
         logger.debug(result)
         return result
-
-    @staticmethod
-    def run_server_subproces(sys_env=None):
-        """run server subprocess"""
-
-        run_server_cmd = ["python", "-m", "core.server.main"]
-        logger.debug(run_server_cmd)
-
-        def get_parent(path, level=1):
-            """get leveled dirname"""
-            new_path = path
-            for _ in range(level):
-                new_path = os.path.dirname(new_path)
-            return new_path
-
-        workdir = get_parent(os.path.abspath(__name__), 2)
-        logger.debug(workdir)
-
-        # use current environment if not defined
-        env = os.environ.copy() if not sys_env else sys_env
-
-        try:
-            if os.name == "nt":
-                # linux subprocess module does not have STARTUPINFO
-                # so only use it if on Windows
-                si = subprocess.STARTUPINFO()
-                si.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
-                server_proc = subprocess.Popen(
-                    run_server_cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    shell=True,
-                    cwd=workdir,
-                    env=env,
-                    startupinfo=si,
-                )
-            else:
-                server_proc = subprocess.Popen(
-                    run_server_cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    shell=True,
-                    cwd=workdir,
-                    env=env,
-                )
-
-            _, serr = server_proc.communicate()
-            if server_proc.returncode != 0:
-                logger.error(
-                    "server error\n%s", serr.decode().replace(os.linesep, "\n")
-                )
-                raise ServerError
-        except FileNotFoundError:
-            logger.exception("python not found in path", exc_info=True)
-            raise ServerError from None
-        except OSError:
-            logger.debug("OSError")
-        except Exception:
-            logger.exception("cannot run_server", exc_info=True)
-            raise ServerError from None
-
-    def __init__(self) -> None:
-        # server is running
-        self.server_online = False
-        # server error
-        self.server_error = False
-        # busy
-        self.busy = False
+    except ConnectionError:
+        raise ServerOffline from None
 
 
-    def run_server(self, sys_env=None):
-        """running server thread"""
-        if self.server_online:
-            return
+def server_subproces(activate_path=None) -> None:
+    """server subprocess
 
-        def server_task(parent, sys_env=None):
-            try:
-                parent.server_online = True
-                Service.run_server_subproces(sys_env)
-            except ServerError:
-                parent.server_error = True
-            finally:
-                parent.server_online = False
+    Raises:
+        ServerError
+    """
+    activator = [] if not activate_path else activate_path+["&&"]
+    run_server_cmd = activator+["python", "-m", "core.server.main"]
+    logger.debug(run_server_cmd)
 
-        thread = threading.Thread(target=server_task, args=(self, sys_env))
-        if not self.server_online:
-            thread.start()    
+    def get_parent(path, level=1):
+        """get leveled dirname"""
+        new_path = path
+        for _ in range(level):
+            new_path = os.path.dirname(new_path)
+        return new_path
 
-    def reload_server(self):
-        """reload server"""
-        self.server_error = False
-        self.run_server()
+    workdir = get_parent(os.path.abspath(__file__), 2)
+    logger.debug(__file__)
+    logger.debug(workdir)
 
-    def request_task(self, message: "Union[RequestMessage, str]"):
-        """request task"""
-        if isinstance(message, RequestMessage):
-            v_message = message.to_rpc()
+    # use current environment if not defined
+    # env = os.environ.copy() if not sys_env else sys_env
+
+    try:
+        if os.name == "nt":
+            # linux subprocess module does not have STARTUPINFO
+            # so only use it if on Windows
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
+            server_proc = subprocess.Popen(
+                run_server_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+                cwd=workdir,
+                # env=env,
+                startupinfo=si,
+            )
         else:
-            v_message = message
+            server_proc = subprocess.Popen(
+                run_server_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+                cwd=workdir,
+                # env=env,
+            )
 
-        logger.debug(v_message)
+        _, serr = server_proc.communicate()
+        if server_proc.returncode != 0:
+            logger.error("server error\n%s", serr.decode().replace(os.linesep, "\n"))
+            raise ServerError
+    except FileNotFoundError:
+        logger.exception("python not found in path", exc_info=True)
+        raise ServerError from None
+    except OSError:
+        logger.debug("OSError, port in use")
+    except Exception:
+        logger.exception("cannot run_server", exc_info=True)
+        raise ServerError from None
 
-        try:
-            self.busy = True
-            result = Service.request(v_message)
-        except ConnectionError:
-            if not self.server_error:
-                # Autorun server entry point ++++++++++
-                self.run_server()
-                return self.request_task(v_message)
-        else:
-            self.server_online = True
-            return result
-        finally:
-            self.busy = False
 
-    def ping(self, *args):
-        # ping test
-        return self.request_task(RequestMessage("ping", args))
+def run_server(activate_path=None) -> None:
+    """running server thread
 
-    def exit(self, *args):
-        # exit server
-        self.server_online = False
-        message = RequestMessage("exit", args)
-        response = self.request_task(message)
-        response_message = ResponseMessage.from_rpc(response)
-        if response_message.resp_id == message.req_id:
-            return response_message.results
+    Raises:
+        ServerError
+    """
 
-    def complete(self, src: str, line: str, character: str) -> "Dict[str, str]":
-        """get sublime formatted completion data"""
-        message = RequestMessage("textDocument.completion")
-        message.params = {
-            "uri": src,
-            "location": {"line": line, "character": character},
-        }
-        response = self.request_task(message.to_rpc())
-        response_message = ResponseMessage.from_rpc(response)
-        if response_message.resp_id == message.req_id:
-            return response_message.results
+    logger.debug(activate_path)
 
-    def hover(self, src: str, line: str, character: str) -> "Dict[str, str]":
-        """get sublime formatted documentation data"""
-        message = RequestMessage("textDocument.hover")
-        message.params = {
-            "uri": src,
-            "location": {"line": line, "character": character},
-        }
-        logger.debug(message)
-        response = self.request_task(message.to_rpc())
-        response_message = ResponseMessage.from_rpc(response)
-        if response_message.resp_id == message.req_id:
-            return response_message.results
+    thread = threading.Thread(target=server_subproces, args=(activate_path,))
+    thread.start()
 
-    def document_format(self, src: str) -> "Dict[str, str]":
-        """get sublime formatted PEP formatted data"""
-        message = RequestMessage("textDocument.formatting")
-        message.params = {"uri": src}
-        response = self.request_task(message.to_rpc())
-        response_message = ResponseMessage.from_rpc(response)
-        if response_message.resp_id == message.req_id:
-            return response_message.results
 
-    def change_workspace(self, workspace_dir: str):
-        """change workspace directory"""        
+def request_task(message: "Union[RequestMessage, str]") -> "Dict[str, Any]":
+    """request task"""
 
-        message = RequestMessage("document.changeWorkspace")
-        message.params = {"uri": workspace_dir}
-        response = self.request_task(message.to_rpc())
-        response_message = ResponseMessage.from_rpc(response)
-        if response_message.resp_id == message.req_id:
-            return response_message.results
+    if isinstance(message, RequestMessage):
+        v_message = message.to_rpc()
+    else:
+        v_message = message
+
+    return request(v_message)
+
+
+def ping(*args) -> "ResponseMessage":
+    """ping test"""
+
+    return request_task(RequestMessage("ping", args))
+
+
+def initialize(*args):
+    """initialize server"""
+    # temprorarily use ping to tests connection
+    return ResponseMessage.from_rpc(ping(*args))
+
+
+def shutdown(*args) -> "ResponseMessage":
+    """shutdown server"""
+
+    message = RequestMessage("exit", args)
+    response = request_task(message)
+    response_message = ResponseMessage.from_rpc(response)
+    return response_message
+
+
+def complete(src: str, line: str, character: str) -> "ResponseMessage":
+    """get completion data"""
+
+    message = RequestMessage("textDocument.completion")
+    message.params = {
+        "uri": src,
+        "location": {"line": line, "character": character},
+    }
+    response = request_task(message.to_rpc())
+    response_message = ResponseMessage.from_rpc(response)
+    return response_message
+
+
+def hover(src: str, line: str, character: str) -> "ResponseMessage":
+    """get sublime formatted documentation data"""
+
+    message = RequestMessage("textDocument.hover")
+    message.params = {
+        "uri": src,
+        "location": {"line": line, "character": character},
+    }
+    logger.debug(message)
+    response = request_task(message.to_rpc())
+    response_message = ResponseMessage.from_rpc(response)
+    return response_message
+
+
+def document_format(src: str) -> "ResponseMessage":
+    """get sublime formatted PEP formatted data"""
+
+    message = RequestMessage("textDocument.formatting")
+    message.params = {"uri": src}
+    response = request_task(message.to_rpc())
+    response_message = ResponseMessage.from_rpc(response)
+    return response_message
+
+
+def change_workspace(workspace_dir: str) -> "ResponseMessage":
+    """change workspace directory"""
+
+    message = RequestMessage("document.changeWorkspace")
+    message.params = {"uri": workspace_dir}
+    response = request_task(message.to_rpc())
+    response_message = ResponseMessage.from_rpc(response)
+    return response_message

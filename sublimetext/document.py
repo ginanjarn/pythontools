@@ -1,12 +1,15 @@
 """document operation"""
 
 
-from os import path
-import sublime
+import sublime  # pylint: disable=import-error
 import logging
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
+sh = logging.StreamHandler()
+sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+sh.setLevel(logging.DEBUG)
+logger.addHandler(sh)
 
 
 def show_completions(view):
@@ -37,11 +40,7 @@ def show_popup(view, content, location, callback):
 
 def open(view, path_encoded):
     """Open file"""
-    if path_encoded.startswith(":"):
-        module_path = path.abspath(view.file_name()) + path_encoded
-        view.window().open_file(module_path, sublime.ENCODED_POSITION)
-    else:
-        view.window().open_file(path_encoded, sublime.ENCODED_POSITION)
+    view.window().open_file(path_encoded, sublime.ENCODED_POSITION)
 
 
 class Update:
@@ -86,6 +85,9 @@ class Update:
 
 def apply_changes(view: sublime.View, edit: sublime.Edit, changes):
     # type : Callable[sublime.View, sublime.Edit, Any] -> None
+
+    if not changes:
+        return  # cancel if empty
 
     pos_changes = 0
     new_values = []  # type : List[Update]

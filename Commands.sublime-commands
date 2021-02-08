@@ -1,0 +1,8 @@
+[
+	{ "caption": "PyTools: Python Interpreter", "command": "pytools_python_interpreter" },
+
+	{ "caption": "PyTools: Format document", "command": "pytools_format" },
+
+	{ "caption": "PyTools: Run server", "command": "pytools_runserver" },
+	{ "caption": "PyTools: Shutdown server", "command": "pytools_shutdownserver" },
+]

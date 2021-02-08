@@ -6,12 +6,11 @@ from jedi import Script, Project
 import logging
 
 logger = logging.getLogger("formatting")
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
 sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
 sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
-
 
 
 def get_project(path: str) -> "Project":
@@ -19,10 +18,10 @@ def get_project(path: str) -> "Project":
     return Project(path)
 
 
-def render_html(docs: str) -> str:
+def render_html(header: str, docs: str = None) -> str:
     """render docstring to html"""
 
-    if not docs:
+    if not header:
         return
 
     def wrap_paragraph(doc: str):
@@ -33,18 +32,37 @@ def render_html(docs: str) -> str:
         """wrap line with 'br' tag"""
         return "<br>".join(doc.split("\n"))
 
-    escaped = escape(docs, quote=False)
-    pwrapped = wrap_paragraph(escaped)
-    lnwrapped = wrap_line(pwrapped)
-    return lnwrapped
+    body = ""
+    if docs:
+        escaped = escape(docs, quote=False)
+        pwrapped = wrap_paragraph(escaped)
+        lnwrapped = wrap_line(pwrapped)
+        body = lnwrapped
+    return header + body
 
 
 def to_rpc(helps: "List[Name]") -> "Dict[str, Any]":
     """convert docstring to rpc"""
 
     def make_rpc(helps):
-        html_ = render_html(helps[0].docstring())
-        return {"html": html_}
+        help_ = helps[0]
+
+        header_template = '<code>{type}: <a href="">{name}</a></code>'.format(
+            type=help_.type, name=help_.name
+        )
+
+        if help_.is_keyword:
+            html_ = render_html(header_template)
+        else:
+            html_ = render_html(header_template, help_.docstring())
+        return {
+            "html": html_,
+            "link": {
+                "path": help_.module_path,
+                "line": help_.line,
+                "character": help_.column,
+            },
+        }
 
     return make_rpc(helps) if any(helps) else None
 
