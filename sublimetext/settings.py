@@ -58,14 +58,14 @@ def find_activate(python_path):
     def find_path(dir_path: str):
         activate_path = "Scripts\\activate" if os.name == "nt" else r"bin/activate"
         paths = dir_path.split(os.sep)
-        found = ""
+
         for root in range(len(paths)):
             prefix = os.sep.join(paths[:root])
-            path = os.path.join(prefix,activate_path)
+            path = os.path.join(prefix, activate_path)
             if os.path.isfile(path):
                 return path
-        if not found:
-            raise FileNotFoundError("unable find `activate` file")
+
+        raise FileNotFoundError("unable find `activate` file")
 
     return find_path(python_path)
 
@@ -74,16 +74,15 @@ def find_environment(python_path):
     """find environment path"""
 
     def find_path(dir_path: str):
-        python_bin = "python.exe" if os.name == "nt" else r"bin/python"
         paths = dir_path.split(os.sep)
-        found = ""
-        for root in range(len(paths)):
+
+        for root in range(len(paths), 0, -1):  # find from latest path
             prefix = os.sep.join(paths[:root])
-            path = os.path.join(prefix,python_bin)
+            path = os.path.join(prefix, PYTHON_BIN)
             if os.path.isfile(path):
                 return prefix
-        if not found:
-            raise FileNotFoundError("unable find `python` file")
+
+        raise FileNotFoundError("unable find `python` file")
 
     return find_path(python_path)
 

@@ -4,6 +4,7 @@
 from re import findall
 import json
 import socket
+import sys
 import logging
 
 # TODO: Clean up later
@@ -12,7 +13,7 @@ from . import service
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
 sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
 sh.setLevel(logging.DEBUG)
@@ -27,6 +28,14 @@ class ContentOverflow(ValueError):
     """Content too large"""
 
 
+class ContentInvalid(ValueError):
+    """Content invalid"""
+
+
+class InvalidMethod(KeyError):
+    """unable to find method"""
+
+
 class InvalidParams(KeyError):
     """unable to get required params"""
 
@@ -36,9 +45,13 @@ RPC_SEPARATOR = b"\r\n\r\n"
 
 def get_rpc_content(message: bytes) -> str:
     """get rpc content"""
-    header, content = message.split(RPC_SEPARATOR)
 
-    def get_content_length(header: bytes) -> int:
+    try:
+        header, content = message.split(RPC_SEPARATOR)
+    except ValueError:
+        raise ContentInvalid from None
+
+    def content_length(header: bytes) -> int:
         """get content length"""
         decoded = header.decode("ascii")
         found = findall(r"Content-Length: (\d*)\s?", decoded)
@@ -46,10 +59,9 @@ def get_rpc_content(message: bytes) -> str:
             raise ValueError("unable fetch content length from '%s'" % decoded)
         return int(found[0])
 
-    required_len = get_content_length(header)
-    if len(content) < required_len:
+    if len(content) < content_length(header):
         raise ContentIncomplete
-    if len(content) > required_len:
+    if len(content) > content_length(header):
         raise ContentOverflow
     return content.decode("utf-8")
 
@@ -90,13 +102,16 @@ class Server:
             conn, addr = s.accept()
             with conn:
                 print("Connected by", addr)
-                recv = b""
+                recv = []
                 while True:
                     data = conn.recv(1024)
                     try:
-                        recv += data
+                        recv.append(data)
                         logger.debug(recv)
-                        content = get_rpc_content(recv)
+                        content = get_rpc_content(b"".join(recv))
+                    except ContentInvalid:
+                        logger.error("content invalid")
+                        break
                     except ContentIncomplete:
                         continue
                     except ContentOverflow:
@@ -106,14 +121,14 @@ class Server:
                         logger.debug(content)
                         break
 
-                # default result
-                result = r'{"jsonrpc":"2.0","id":null,"\
-                    "error":{"code":1,"message":"invalid request"}}'
-
                 try:
                     result = callback(content)
                 except Exception:
                     logger.exception("internal error")
+                    result = (
+                        '{"jsonrpc":"2.0","id":null,"'
+                        '"error":{"code":1,"message":"invalid request"}}'
+                    )
                 logger.debug(result)
                 conn.sendall(create_rpc_message(result))
 
@@ -133,28 +148,34 @@ class Server:
     def do(self, message: str) -> str:
         """do operation"""
 
-        parsed = RequestMessage.from_rpc(message)
-        id_ = parsed.id
-
+        id_ = -1
         results = None
         error = None
+
         try:
-            results = self.service[parsed.method](parsed.params)
+            parsed = RequestMessage.from_rpc(message)
         except json.JSONDecodeError as err:
-            logger.debug("invalid params", exc_info=True)
+            logger.debug("invalid message", exc_info=True)
             error = "invalid message : %s" % (str(err))
+            return json.dumps({"id": id_, "results": results, "error": error})
+
+        try:
+            id_ = parsed.id
+            method = self.service.get(parsed.method)
+            if not method:
+                raise InvalidMethod
+            results = method(parsed.params)
         except InvalidParams as err:
             logger.debug("invalid params", exc_info=True)
             error = "invalid params : %s" % (str(err))
-        except KeyError as err:
+        except InvalidMethod as err:
             logger.debug("method not found", exc_info=True)
             error = "method not found : %s" % (str(err))
         except Exception as err:
             logger.error("internal error", exc_info=True)
             error = "internal error : %s" % (str(err))
 
-        response = {"id": id_, "results": results, "error": error}
-        return json.dumps(response)
+        return json.dumps({"id": id_, "results": results, "error": error})
 
     def main_loop(self, once=False):
         """server main loop"""
@@ -179,54 +200,56 @@ class Server:
     def completion(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         # TODO: build schenario
         path = ""
-        proj = None if not self.workspace_directory else service.jedi_project(self.workspace_directory)
+        proj = (
+            None
+            if not self.workspace_directory
+            else service.jedi_project(self.workspace_directory)
+        )
         try:
             src = params["uri"]
             line = params["location"]["line"]
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            result = service.complete(
+            return service.complete(
                 source=src, line=line, column=character, path=path, project=proj
             )
         except KeyError as err:
             raise InvalidParams(str(err)) from err
         except ValueError as err:
             raise InvalidParams(str(err)) from err
-        else:
-            return result
 
     def hover(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         # TODO: build schenario
         path = ""
-        proj = None if not self.workspace_directory else service.jedi_project(self.workspace_directory)
+        proj = (
+            None
+            if not self.workspace_directory
+            else service.jedi_project(self.workspace_directory)
+        )
         try:
             src = params["uri"]
             line = params["location"]["line"]
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            result = service.get_documentation(
+            return service.get_documentation(
                 source=src, line=line, column=character, path=path, project=proj
             )
         except KeyError as err:
             raise InvalidParams(str(err)) from err
         except ValueError as err:
             raise InvalidParams(str(err)) from err
-        else:
-            return result
 
     def document_format(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         # TODO: build schenario
         try:
             src = params["uri"]
-            result = service.format_document(src)
+            return service.format_document(src)
         except KeyError as err:
             raise InvalidParams(str(err)) from err
         except ValueError as err:
             raise InvalidParams(str(err)) from err
-        else:
-            return result
 
     def change_workspace(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         # TODO: build schenario
@@ -242,15 +265,23 @@ class Server:
 
 
 def main():
-    server = Server()
-    server.register_service("ping", server.ping)
-    server.register_service("exit", server.exit)
-    server.register_service("textDocument.completion", server.completion)
-    server.register_service("textDocument.hover", server.hover)
-    server.register_service("textDocument.formatting", server.document_format)
-    server.register_service("document.changeWorkspace", server.change_workspace)
+    try:
+        server = Server()
+        server.register_service("ping", server.ping)
+        server.register_service("exit", server.exit)
+        server.register_service("textDocument.completion", server.completion)
+        server.register_service("textDocument.hover", server.hover)
+        server.register_service("textDocument.formatting", server.document_format)
+        server.register_service("document.changeWorkspace", server.change_workspace)
 
-    server.main_loop()
+        server.main_loop()
+
+    except OSError:
+        logger.debug("port in use")
+        sys.exit(123)
+    except Exception:
+        logger.fatal("unexpectedd error", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

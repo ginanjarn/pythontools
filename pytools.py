@@ -24,18 +24,15 @@ class StateManager:
     def __init__(self) -> None:
         self.online = False
         self.error = False
-        self.initialized = False
         self.workspace_directory = None
 
     def __repr__(self) -> str:
         return (
             "error: {error}, online: {online}, "
-            "initialized: {initialized}, "
             "workspace_directory: {workspace_directory}"
             "".format(
                 error=self.error,
                 online=self.online,
-                initialized=self.initialized,
                 workspace_directory=self.workspace_directory,
             )
         )
@@ -78,149 +75,8 @@ class Settings:
         self.format_document = self.settings.get("format_document", True)
 
 
-PROCESS_LOCK = threading.Lock()
 SERVER_STATE = StateManager()
 SETTINGS = Settings()
-
-
-def runnable(func):
-    """function runnable
-
-    Prevent multiple thread do request.
-    """
-
-    def wrapper(*args, **kwargs):
-        if PROCESS_LOCK.locked():
-            logger.error("process locked")
-            return None
-        with PROCESS_LOCK:
-            logger.debug("runnable")
-            return func(*args, **kwargs)
-
-    return wrapper
-
-
-def request(func):
-    """request handler"""
-
-    def wrapper(*args, **kwargs):
-        try:
-            logger.info("do request")
-            do_request = func(*args, **kwargs)
-            SERVER_STATE.online = True
-            return do_request
-        except ServerOffline:
-            logger.debug("server offline")
-            SERVER_STATE.online = False
-            return None
-
-    return wrapper
-
-
-def initialize() -> None:
-    """do initialize"""
-
-    if SERVER_STATE.initialized:
-        return
-
-    @request
-    def init_thread():
-        logger.info("initializing")
-        result = client.initialize()
-        if result.error:
-            logger.debug("initialize failed")
-            return
-
-        SERVER_STATE.initialized = True
-        logger.debug("initialize success")
-
-        window = sublime.active_window()
-        window.run_command("pytools_change_workspace")
-
-    thread = threading.Thread(target=init_thread)
-    thread.start()
-
-
-def initialized(func):
-    """execute if initialized
-
-    initialize if not initialized
-    """
-
-    def wrapper(*args, **kwargs):
-        if SERVER_STATE.initialized:
-            logger.debug("initialized")
-            return func(*args, **kwargs)
-
-        logger.error("not initialized")
-        initialize()
-        return None
-
-    return wrapper
-
-
-def server_valid(func):
-    """server valid
-
-    Run if server valid.
-    """
-
-    def wrapper(*args, **kwargs):
-        if SERVER_STATE.error:
-            logger.error("server error")
-            return None
-        logger.debug("server valid")
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def set_workspace(func):
-    """required to set workspace"""
-
-    def wrapper(*args, **kwargs):
-        view = sublime.active_window().active_view()
-        file_name = view.file_name()
-        if valid_source(view) and file_name is not None:
-            if SERVER_STATE.workspace_directory != os.path.dirname(file_name):
-                logger.debug("required change workspace_directory")
-                view.run_command("pytools_change_workspace")
-                return None
-            logger.debug("cancel change_workspace")
-            return func(*args, **kwargs)
-        logger.debug("cancel change_workspace")
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def online(func):
-    """cancel if server offline"""
-
-    def wrapper(*args, **kwargs):
-        if not SERVER_STATE.online:
-            logger.error("server offline")
-            return None
-        logger.debug("server online")
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def runserver(func):
-    """function can run server"""
-
-    def wrapper(*args, **kwargs):
-        if SERVER_STATE.online:
-            logger.debug("already running")
-            return func(*args, **kwargs)
-
-        logger.debug("required running server")
-        window = sublime.active_window()
-        window.run_command("pytools_runserver")
-        return None
-
-    return wrapper
 
 
 def ignore(config: bool):
@@ -231,7 +87,6 @@ def ignore(config: bool):
             if not config:
                 logger.debug("function ignored")
                 return None
-            logger.debug("function executed")
             return func(*args, **kwargs)
 
         return wrapper
@@ -239,18 +94,106 @@ def ignore(config: bool):
     return execute
 
 
+def online() -> bool:
+    logger.debug("online: %s", SERVER_STATE.online)
+    return SERVER_STATE.online
+
+
+def can_run_server(func):
+    """run server if not running, bypass if already running"""
+
+    def wrapper(*args, **kwargs):
+        if SERVER_STATE.online:
+            return func(*args, **kwargs)
+        logger.debug("required running server")
+        window = sublime.active_window()
+        window.run_command("pytools_runserver")
+        return None
+
+    return wrapper
+
+
+def server_valid(func):
+    """cancel if server error"""
+
+    def wrapper(*args, **kwargs):
+        if SERVER_STATE.error:
+            logger.debug("server error")
+            return None
+        logger.debug("server valid")
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+REQUEST_LOCK = threading.RLock()
+
+
+def request_queue(func):
+    """only single request, pending other"""
+
+    def wrapper(*args, **kwargs):
+        with REQUEST_LOCK:
+            logger.debug("requesting")
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
+PROCESS_LOCK = threading.Lock()
+
+
+def process_lock(func):
+    """only run single process. cancel if any running"""
+
+    def wrapper(*args, **kwargs):
+        if PROCESS_LOCK.locked():
+            logger.debug("process locked")
+            return None
+        with PROCESS_LOCK:
+            logger.debug("processing")
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
+@request_queue
+def check_connection():
+    """check any server connected"""
+    try:
+        logger.debug("check connection")
+        results = client.ping()
+        logger.debug(results)
+    except ServerOffline:
+        logger.debug("connection error")
+        SERVER_STATE.online = False
+    else:
+        SERVER_STATE.online = True
+
+
 def plugin_loaded():
     """on plugin loaded"""
 
     SERVER_STATE.reset()
     SETTINGS.initialize()
-    initialize()
+    thread = threading.Thread(target=check_connection)
+    thread.start()
 
 
 def valid_source(view, pos=0):
     """python source file"""
 
     return view.match_selector(pos, "source.python")
+
+
+def validate_source(func):
+    """validate source at active view"""
+
+    def wrapper(*args, **kwargs):
+        view = sublime.active_window().active_view()
+        return func(*args, **kwargs) if validate_source(view) else None
+
+    return wrapper
 
 
 def valid_attribute(view, pos):
@@ -260,6 +203,20 @@ def valid_attribute(view, pos):
     result = not view.match_selector(pos, "comment") and result
     result = not view.match_selector(pos, "string") and result
     return result
+
+
+@request_queue
+def change_workspace(path_directory):
+    """change workspace
+
+    Raises:
+        ServerOffline"""
+
+    if SERVER_STATE.workspace_directory == path_directory:
+        return
+    results = client.change_workspace(path_directory)
+    SERVER_STATE.workspace_directory = results.results["workspace_directory"]
+    return
 
 
 # FIXME: SHOW ERROR MESSAGE IN STATUS BAR
@@ -275,11 +232,10 @@ class PyTools(sublime_plugin.EventListener):
         self.completion = None
         self.old_prefix = ""
 
-    @runserver
-    @online
-    @initialized
-    @runnable
-    @request
+    @can_run_server
+    @server_valid
+    @process_lock
+    @request_queue
     def fetch_completion(self, view, prefix, location):
         """fetch completion thread"""
 
@@ -292,7 +248,6 @@ class PyTools(sublime_plugin.EventListener):
             end = word_region.a  # complete at first identifier offset
         source_region = sublime.Region(start, end)
         line, character = view.rowcol(end)  # get rowcol at end selection
-        result = client.complete(view.substr(source_region), line, character)
 
         def make_completion(completions):
             for completion in completions:
@@ -301,17 +256,25 @@ class PyTools(sublime_plugin.EventListener):
                     completion["label"],
                 )
 
-        self.completion = [] if not result else list(make_completion(result.results))
-        document.show_completions(view)
+        try:
+            change_workspace(os.path.dirname(view.file_name()))
+            result = client.fetch_completion(
+                view.substr(source_region), line, character
+            )
+        except ServerOffline:
+            return
+        else:
+            self.completion = (
+                [] if not result else list(make_completion(result.results))
+            )
+            document.show_completions(view)
 
     @ignore(SETTINGS.autocomplete)
-    @server_valid
+    @validate_source
     def on_query_completions(self, view, prefix, locations):
         """on query completion listener"""
 
-        location = locations[0]
-
-        if not valid_attribute(view, location):
+        if not valid_attribute(view, locations[0]):
             return None
 
         def completon_build(completion):
@@ -328,16 +291,15 @@ class PyTools(sublime_plugin.EventListener):
             return completon_build(completion)
 
         thread = threading.Thread(
-            target=self.fetch_completion, args=(view, prefix, location)
+            target=self.fetch_completion, args=(view, prefix, locations[0])
         )
         thread.start()
         return None
 
-    @runserver
-    @online
-    @initialized
-    @runnable
-    @request
+    @can_run_server
+    @process_lock
+    @server_valid
+    @request_queue
     def fetch_documentation(self, view, location):
         """fetch documentation thread"""
 
@@ -349,10 +311,6 @@ class PyTools(sublime_plugin.EventListener):
             return  # cancel request for non identifier
         source_region = sublime.Region(start, end)
         line, character = view.rowcol(end)  # get rowcol at end selection
-        result = client.hover(view.substr(source_region), line, character)
-
-        if not result.results:
-            return  # cancel
 
         def decorate(content):
             return '<div style="padding: .5em">%s</div>' % content
@@ -369,15 +327,25 @@ class PyTools(sublime_plugin.EventListener):
             )
             return document.open(view, path)
 
-        content = result.results.get("html")
-        link = result.results.get("link")
+        try:
+            change_workspace(os.path.dirname(view.file_name()))
+            result = client.fetch_documentation(
+                view.substr(source_region), line, character
+            )
+        except ServerOffline:
+            pass
+        else:
+            if not result.results:
+                return  # cancel
+            content = result.results.get("html")
+            link = result.results.get("link")
 
-        document.show_popup(
-            view, decorate(content), location, lambda _: goto(view, link)
-        )
+            document.show_popup(
+                view, decorate(content), location, lambda _: goto(view, link)
+            )
 
     @ignore(SETTINGS.documentation)
-    @server_valid
+    @validate_source
     def on_hover(self, view, point, hover_zone):
         """on hover listener"""
 
@@ -391,15 +359,6 @@ class PyTools(sublime_plugin.EventListener):
             )
             thread.start()
 
-    @server_valid
-    def on_activated_async(self, view):
-        """on activated async listener"""
-
-        if not valid_source(view):
-            return
-
-        view.run_command("pytools_change_workspace")
-
 
 class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
@@ -412,17 +371,17 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
         self.format_document(view, edit)
 
     @ignore(SETTINGS.format_document)
+    @validate_source
     @server_valid
-    @initialized
-    @runnable
-    @request
     def format_document(self, view, edit):
-        start = 0
-        end = view.size()
-        source_region = sublime.Region(start, end)
-        src = view.substr(source_region)
-        result = client.document_format(src)
-        document.apply_changes(view, edit, result.results)
+        src = view.substr(sublime.Region(0, view.size()))
+        try:
+            result = client.format_code(src)
+        except ServerOffline:
+            pass
+        else:
+            logger.debug(result)
+            document.apply_changes(view, edit, result.results)
 
     def is_visible(self):
         return valid_source(self.view)
@@ -436,29 +395,20 @@ class PytoolsChangeWorkspaceCommand(sublime_plugin.TextCommand):
         view = self.view
         if not valid_source(view):
             return
+        file_name = view.file_name()
+        if not file_name:
+            return
+        path = os.path.dirname(file_name)
         logger.debug("init change_workspace")
-        thread = threading.Thread(target=self.change_thread, args=(view, path))
+
+        def change_thread(path):
+            try:
+                change_workspace(path)
+            except ServerOffline:
+                pass
+
+        thread = threading.Thread(target=change_thread, args=(path,))
         thread.start()
-
-    @initialized
-    @online
-    @runnable
-    def change_thread(self, view, path=None):
-        if not path:
-            file_name = view.file_name()
-            if not file_name:
-                logger.debug("cancel change_workspace")
-                return  # cancel
-            path = os.path.dirname(file_name)
-
-        if SERVER_STATE.workspace_directory == path:
-            logger.debug("cancel change_workspace")
-            return  # cancel
-
-        logger.debug("do change_workspace")
-        results = client.change_workspace(path)
-        SERVER_STATE.workspace_directory = results.results["workspace_directory"]
-        logger.debug("finish change_workspace")
 
 
 class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
@@ -469,14 +419,17 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
         thread = threading.Thread(target=self.exit)
         thread.start()
 
-    @runnable
-    @request
+    @request_queue
     def exit(self):
         if SERVER_STATE.error:  # cancel all request if server error
             return
-        response = client.shutdown()
-        SERVER_STATE.reset()
-        logger.debug("finish shutdown server")
+        try:
+            response = client.shutdown()
+        except ServerOffline:
+            pass
+        else:
+            SERVER_STATE.reset()
+            logger.debug("finish shutdown server")
 
 
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
@@ -488,7 +441,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         thread = threading.Thread(target=self.run_server, args=(python_path,))
         thread.start()
 
-    @runnable
+    @process_lock
     def run_server(self, python_path):
         if SERVER_STATE.error:  # cancel all request if server error
             return
@@ -496,11 +449,17 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         env_path = settings.find_environment(python_path)
         activate = [path for path in (activate_path, env_path) if path]
         try:
+            logger.debug("running server")
             client.run_server(activate)
             SERVER_STATE.online = True
         except ServerError:
+            logger.debug("server error")
             SERVER_STATE.error = True
             SERVER_STATE.online = False
+        else:
+            logger.debug("server ready")
+            self.window.status_message("Server ready")
+            self.window.active_view().run_command("pytools_change_workspace")
 
 
 class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):

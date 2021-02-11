@@ -22,23 +22,23 @@ def render_html(header: str, docs: str = None) -> str:
     """render docstring to html"""
 
     if not header:
-        return
+        return ""
 
-    def wrap_paragraph(doc: str):
-        """wrap paragraph with 'p' tag"""
-        return "".join(["<p>%s</p>" % par for par in doc.split("\n\n")])
+    def escape_space(doc: str):
+        """replace 'space' -> '&nbsp;'"""
+        return doc.replace("  ", "&nbsp;&nbsp;")
 
-    def wrap_line(doc: str):
-        """wrap line with 'br' tag"""
-        return "<br>".join(doc.split("\n"))
+    def escape_newline(doc: str):
+        """replace '\\n' -> '<br>'"""
+        return doc.replace("\n", "<br>")
 
-    body = ""
-    if docs:
-        escaped = escape(docs, quote=False)
-        pwrapped = wrap_paragraph(escaped)
-        lnwrapped = wrap_line(pwrapped)
-        body = lnwrapped
-    return header + body
+    def document_body(docs):
+        """build documentation body"""
+        if not docs:
+            return ""
+        return "<p>%s</p>" % escape_newline(escape_space(escape(docs, quote=False)))
+
+    return "".join([header, document_body(docs)])
 
 
 def to_rpc(helps: "List[Name]") -> "Dict[str, Any]":
@@ -47,16 +47,15 @@ def to_rpc(helps: "List[Name]") -> "Dict[str, Any]":
     def make_rpc(helps):
         help_ = helps[0]
 
-        header_template = '<code>{type}: <a href="">{name}</a></code>'.format(
-            type=help_.type, name=help_.name
+        header_template = '<code><a href="">{module}.{name}</a> [<em>{type_}</em>]</code>'.format(
+            module=help_.module_name, name=help_.name, type_=help_.type
         )
 
         if help_.is_keyword:
-            html_ = render_html(header_template)
-        else:
-            html_ = render_html(header_template, help_.docstring())
+            return None
+
         return {
-            "html": html_,
+            "html": render_html(header_template, help_.docstring()),
             "link": {
                 "path": help_.module_path,
                 "line": help_.line,
@@ -71,7 +70,7 @@ def get_documentation(source: str, line: int, column: int, **kwargs) -> "Any":
     """complete script at following pos(line, column)"""
     project = kwargs.get("project", None)
     path = kwargs.get("path", "")
-    logger.debug(project)
+    # logger.debug(project)
     script = Script(code=source, path=path, project=project)
     results = script.help(line=line, column=column)
     raw = kwargs.get("raw", None)

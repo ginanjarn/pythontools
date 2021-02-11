@@ -72,14 +72,18 @@ def to_rpc(changes_diff: str, old_source: str):
         end = start + span
         return start, end
 
-    def change_gen(changes_diff,old_source):
+    def change_gen(changes_diff, old_source):
         olds = old_source.split("\n")
         for line in changes_diff.splitlines():
             if line.startswith("@@"):
                 start_line, end_line = get_removed(line)
                 logger.debug(line)
-                yield {"range":{"start":{"line":start_line,"character":0},
-                    "end":{"line":end_line,"character":len(olds[end_line-1])}}}
+                yield {
+                    "range": {
+                        "start": {"line": start_line, "character": 0},
+                        "end": {"line": end_line, "character": len(olds[end_line - 1])},
+                    }
+                }
             elif line.startswith("-"):
                 continue
             elif line.startswith("+"):
@@ -96,8 +100,8 @@ def to_rpc(changes_diff: str, old_source: str):
             changes.append(change)
             index += 1
         else:
-            if not changes:     # for list
-                continue 
+            if not changes:  # for list
+                continue
             new_text = changes[index].get("newText")
             if new_text is None:
                 changes[index]["newText"] = change

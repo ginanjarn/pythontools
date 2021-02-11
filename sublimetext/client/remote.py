@@ -1,14 +1,14 @@
-"""service"""
+"""remote handler"""
 
 
 from re import findall
 import os
 import socket
 import subprocess
-import logging
 import json
 from random import random
 import threading
+import logging
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
@@ -44,11 +44,10 @@ RPC_SEPARATOR = b"\r\n\r\n"
 def get_rpc_content(message: bytes) -> str:
     """get rpc content"""
 
-    splitted_messages = message.split(RPC_SEPARATOR)
-    if len(splitted_messages) != 2:
+    try:
+        header, content = message.split(RPC_SEPARATOR)
+    except ValueError:
         raise InvalidResponse
-
-    header, content = splitted_messages
 
     def get_content_length(header: bytes) -> int:
         """get content length"""
@@ -133,14 +132,13 @@ def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
             conn.connect((host, port))
             conn.sendall(create_rpc_message(message))
-    
-            result = ""
-            recv = b""
+
+            recv = []
             while True:
                 data = conn.recv(1024)
                 try:
-                    recv += data
-                    content = get_rpc_content(recv)
+                    recv.append(data)
+                    content = get_rpc_content(b"".join(recv))
                 except ContentIncomplete:
                     continue
                 except ContentOverflow:
@@ -148,11 +146,8 @@ def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
                     raise InvalidResponse from None
                 else:
                     logger.debug(content)
-                    result = content
-                    break
-    
-        logger.debug(result)
-        return result
+                    return content
+
     except ConnectionError:
         raise ServerOffline from None
 
@@ -163,8 +158,8 @@ def server_subproces(activate_path=None) -> None:
     Raises:
         ServerError
     """
-    activator = [] if not activate_path else activate_path+["&&"]
-    run_server_cmd = activator+["python", "-m", "core.server.main"]
+    activator = [] if not activate_path else activate_path + ["&&"]
+    run_server_cmd = activator + ["python", "-m", "core.server.main"]
     logger.debug(run_server_cmd)
 
     def get_parent(path, level=1):
@@ -174,7 +169,7 @@ def server_subproces(activate_path=None) -> None:
             new_path = os.path.dirname(new_path)
         return new_path
 
-    workdir = get_parent(os.path.abspath(__file__), 2)
+    workdir = get_parent(os.path.abspath(__file__), 3)
     logger.debug(__file__)
     logger.debug(workdir)
 
@@ -209,9 +204,13 @@ def server_subproces(activate_path=None) -> None:
             )
 
         _, serr = server_proc.communicate()
-        if server_proc.returncode != 0:
+        if server_proc.returncode == 123:
+            raise OSError
+
+        if server_proc.returncode == 1:
             logger.error("server error\n%s", serr.decode().replace(os.linesep, "\n"))
             raise ServerError
+
     except FileNotFoundError:
         logger.exception("python not found in path", exc_info=True)
         raise ServerError from None
@@ -263,43 +262,6 @@ def shutdown(*args) -> "ResponseMessage":
 
     message = RequestMessage("exit", args)
     response = request_task(message)
-    response_message = ResponseMessage.from_rpc(response)
-    return response_message
-
-
-def complete(src: str, line: str, character: str) -> "ResponseMessage":
-    """get completion data"""
-
-    message = RequestMessage("textDocument.completion")
-    message.params = {
-        "uri": src,
-        "location": {"line": line, "character": character},
-    }
-    response = request_task(message.to_rpc())
-    response_message = ResponseMessage.from_rpc(response)
-    return response_message
-
-
-def hover(src: str, line: str, character: str) -> "ResponseMessage":
-    """get sublime formatted documentation data"""
-
-    message = RequestMessage("textDocument.hover")
-    message.params = {
-        "uri": src,
-        "location": {"line": line, "character": character},
-    }
-    logger.debug(message)
-    response = request_task(message.to_rpc())
-    response_message = ResponseMessage.from_rpc(response)
-    return response_message
-
-
-def document_format(src: str) -> "ResponseMessage":
-    """get sublime formatted PEP formatted data"""
-
-    message = RequestMessage("textDocument.formatting")
-    message.params = {"uri": src}
-    response = request_task(message.to_rpc())
     response_message = ResponseMessage.from_rpc(response)
     return response_message
 
