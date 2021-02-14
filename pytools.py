@@ -11,7 +11,7 @@ from .sublimetext import document, settings
 from .sublimetext import ServerOffline, ServerError
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
 sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
 sh.setLevel(logging.DEBUG)
@@ -214,15 +214,49 @@ def change_workspace(path_directory):
 
     if SERVER_STATE.workspace_directory == path_directory:
         return
+    logger.debug("change workspace")
     results = client.change_workspace(path_directory)
     SERVER_STATE.workspace_directory = results.results["workspace_directory"]
     return
 
 
+DIAGNOSTICS = []
+
+
+class Diagnostic:
+    """Diagnostic holder"""
+
+    def __init__(self, severity: int, region: sublime.Region, message: str):
+        self.severity = severity
+        self.region = region
+        self.message = message
+
+    def __repr__(self):
+        return ("severity: {severity}, region: {region}, " "message: {message}").format(
+            severity=self.severity, region=self.region, message=self.message
+        )
+
+    @classmethod
+    def from_rpc(cls, view, message):
+        """build from rpc
+
+        Raise:
+            KeyError"""
+
+        pos = view.text_point(message["line"] - 1, message["column"])
+        region = view.line(pos) if message["column"] == 0 else view.word(pos)
+        severity = message["severity"]
+        msg = "%s: %s" % (message["code"], message["message"])
+        return cls(severity, region, msg)
+
+
 # FIXME: SHOW ERROR MESSAGE IN STATUS BAR
 # sublime.Window().status_message("message")
 
-# FIXME: RUN SERVER ON INIT HOVER AND COMPLETION
+
+def status_message(message: str):
+    """show message in status bar"""
+    sublime.active_window().status_message(message)
 
 
 class PyTools(sublime_plugin.EventListener):
@@ -258,14 +292,18 @@ class PyTools(sublime_plugin.EventListener):
 
         try:
             change_workspace(os.path.dirname(view.file_name()))
-            result = client.fetch_completion(
+            results = client.fetch_completion(
                 view.substr(source_region), line, character
             )
         except ServerOffline:
             return
         else:
+            if results.error:
+                status_message(results.error)
+                return
+
             self.completion = (
-                [] if not result else list(make_completion(result.results))
+                [] if not results else list(make_completion(results.results))
             )
             document.show_completions(view)
 
@@ -329,16 +367,21 @@ class PyTools(sublime_plugin.EventListener):
 
         try:
             change_workspace(os.path.dirname(view.file_name()))
-            result = client.fetch_documentation(
+            results = client.fetch_documentation(
                 view.substr(source_region), line, character
             )
         except ServerOffline:
             pass
         else:
-            if not result.results:
+            if results.error:
+                status_message(results.error)
+                return
+
+            if not results.results:
                 return  # cancel
-            content = result.results.get("html")
-            link = result.results.get("link")
+
+            content = results.results.get("html")
+            link = results.results.get("link")
 
             document.show_popup(
                 view, decorate(content), location, lambda _: goto(view, link)
@@ -359,37 +402,146 @@ class PyTools(sublime_plugin.EventListener):
             )
             thread.start()
 
+        elif hover_zone == sublime.HOVER_GUTTER:
+            line_region = view.line(point)
+
+            def is_intersect(diagnostic: Diagnostic):
+                return diagnostic.region.intersects(line_region)
+
+            def get_message(diagnostic: Diagnostic):
+                return diagnostic.message
+
+            message = map(get_message, filter(is_intersect, DIAGNOSTICS))
+            body = "<br>".join(message)
+            if not body:  # empty
+                return
+            html_msg = '<div style="padding: 0.5em">{body}</div>'.format(body=body)
+            logger.debug(html_msg)
+            document.show_popup(view, html_msg, location=point, callback=None)
+
+    @validate_source
+    def on_pre_save_async(self, view):
+        view.run_command("pytools_clean_diagnose")
+
 
 class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
 
+    @validate_source
     def run(self, edit):
-        view = self.view
-        if not valid_source(view):
-            return
-
         self.format_document(view, edit)
 
     @ignore(SETTINGS.format_document)
-    @validate_source
     @server_valid
     def format_document(self, view, edit):
         src = view.substr(sublime.Region(0, view.size()))
         try:
-            result = client.format_code(src)
+            results = client.format_code(src)
         except ServerOffline:
             pass
         else:
-            logger.debug(result)
-            document.apply_changes(view, edit, result.results)
+            if results.error:
+                status_message(results.error)
+                return
+            logger.debug(results)
+            document.apply_changes(view, edit, results.results)
 
     def is_visible(self):
         return valid_source(self.view)
 
 
+class PytoolsDiagnoseCommand(sublime_plugin.TextCommand):
+    """Diagnose command"""
+
+    @validate_source
+    def run(self, edit, path=None):
+        view = self.view
+        if not valid_source(view):
+            return
+
+        module_path = view.file_name() if not path else path
+        thread = threading.Thread(target=self.diagnose, args=(view, module_path))
+        thread.start()
+
+    # @ignore(SETTINGS.format_document)
+    @server_valid
+    def diagnose(self, view, path):
+        try:
+            results = client.get_diagnostic(path)
+        except ServerOffline:
+            pass
+        else:
+            logger.debug(results)
+
+            if results.error:
+                status_message(results.error)
+                return
+
+            def build_diagnostic(messages):
+                for message in messages:
+                    try:
+                        yield Diagnostic.from_rpc(view, message)
+                    except KeyError:
+                        pass
+
+            def sort_func(diagnostic: Diagnostic):
+                return diagnostic.severity
+
+            global DIAGNOSTICS
+            DIAGNOSTICS = list(
+                sorted(build_diagnostic(results.results), key=sort_func, reverse=True)
+            )
+            # logger.debug(DIAGNOSTICS)
+            scope = {1: "Invalid", 2: "Invalid", 3: "Comment", 4: "Comment"}
+            icon = {1: "circle", 2: "dot", 3: "bookmark", 4: "bookmark"}
+            flags = {
+                1: sublime.DRAW_NO_OUTLINE,
+                2: sublime.DRAW_NO_FILL
+                | sublime.DRAW_NO_OUTLINE
+                | sublime.DRAW_SOLID_UNDERLINE,
+                3: sublime.DRAW_NO_FILL
+                | sublime.DRAW_NO_OUTLINE
+                | sublime.DRAW_SOLID_UNDERLINE
+                | sublime.HIDE_ON_MINIMAP,
+                4: sublime.DRAW_NO_FILL
+                | sublime.DRAW_NO_OUTLINE
+                | sublime.DRAW_SQUIGGLY_UNDERLINE
+                | sublime.HIDE_ON_MINIMAP,
+            }
+
+            def mark(view, severity: int, regions: list):
+                key = "pytools:%d" % severity
+                view.erase_regions(key)  # clean
+
+                view.add_regions(
+                    key, regions, scope[severity], icon[severity], flags[severity]
+                )
+
+            def filter_func(diagnostic: Diagnostic, severity: int):
+                return diagnostic.severity == severity
+
+            for severity in [1, 2, 3, 4]:
+                filtered = [i for i in DIAGNOSTICS if i.severity == severity]
+                regions = [i.region for i in filtered]
+                mark(view=view, severity=severity, regions=regions)
+
+    def is_visible(self):
+        return valid_source(self.view)
+
+
+class PytoolsCleanDiagnoseCommand(sublime_plugin.TextCommand):
+    """CleanDiagnose command"""
+
+    def run(self, edit):
+        for severity in [1, 2, 3, 4]:
+            key = "pytools:%d" % severity
+            self.view.erase_regions(key)
+
+
 class PytoolsChangeWorkspaceCommand(sublime_plugin.TextCommand):
     """Change workspace command"""
 
+    @validate_source
     @server_valid
     def run(self, edit, path=None):
         view = self.view
@@ -483,7 +635,7 @@ class PytoolsTestCommand(sublime_plugin.WindowCommand):
     def run(self):
         print(SERVER_STATE)
         message = "Server required to perform autocomplete, documentation and formatting.\n\nRun server?"
-        result = sublime.yes_no_cancel_dialog(
+        results = sublime.yes_no_cancel_dialog(
             msg=message, yes_title="Run", no_title="Ignore"
         )
-        print(result)
+        print(results)

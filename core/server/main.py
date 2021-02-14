@@ -263,6 +263,16 @@ class Server:
         else:
             return {"workspace_directory": self.workspace_directory}
 
+    def get_diagnostic(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+        # TODO: build schenario
+        try:
+            path = params["uri"]
+            return service.lint(path)
+        except KeyError as err:
+            raise InvalidParams(str(err)) from err
+        except ValueError as err:
+            raise InvalidParams(str(err)) from err
+
 
 def main():
     try:
@@ -273,6 +283,7 @@ def main():
         server.register_service("textDocument.hover", server.hover)
         server.register_service("textDocument.formatting", server.document_format)
         server.register_service("document.changeWorkspace", server.change_workspace)
+        server.register_service("textDocument.get_diagnostic", server.get_diagnostic)
 
         server.main_loop()
 
