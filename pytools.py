@@ -442,7 +442,7 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
 
     @validate_source
     def run(self, edit):
-        self.format_document(view, edit)
+        self.format_document(self.view, edit)
 
     @ignore(SETTINGS.format_document)
     @server_valid
