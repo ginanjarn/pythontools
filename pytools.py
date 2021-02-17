@@ -266,6 +266,10 @@ class PyTools(sublime_plugin.EventListener):
         self.completion = None
         self.old_prefix = ""
 
+        # completion cache
+        self.cached_source = ""
+        self.cached_completion = None
+
     @can_run_server
     @server_valid
     @process_lock
@@ -290,22 +294,31 @@ class PyTools(sublime_plugin.EventListener):
                     completion["label"],
                 )
 
-        try:
-            change_workspace(os.path.dirname(view.file_name()))
-            results = client.fetch_completion(
-                view.substr(source_region), line, character
-            )
-        except ServerOffline:
-            return
-        else:
-            if results.error:
-                status_message(results.error)
-                return
+        source = view.substr(source_region)
 
+        def fetch_completion(source, line, character):
+            try:
+                change_workspace(os.path.dirname(view.file_name()))
+                results = client.fetch_completion(source, line, character)
+            except ServerOffline:
+                return
+            else:
+                if results.error:
+                    status_message(results.error)
+                    return
+                return results
+
+        if self.cached_source == source:
+            self.completion = self.cached_completion
+        else:
+            self.cached_source = source
+            results = fetch_completion(source, line, character)
             self.completion = (
                 [] if not results else list(make_completion(results.results))
             )
-            document.show_completions(view)
+            self.cached_completion = self.completion
+
+        document.show_completions(view)
 
     @ignore(SETTINGS.autocomplete)
     @validate_source
