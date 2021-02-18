@@ -83,6 +83,10 @@ class Settings:
 
         settings = self.load_settings()
 
+        def interpreter_change():
+            sublime.active_window().run_command("pytools_shutdownserver")
+
+        settings.add_on_change("interpreter", interpreter_change)   # interpreter
         settings.add_on_change("autocomplete", self.load_settings)
         settings.add_on_change("documentation", self.load_settings)
         settings.add_on_change("format_document", self.load_settings)
@@ -597,7 +601,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
     def run(self):
         subl_settings = sublime.load_settings("Pytools.sublime-settings")
-        python_path = subl_settings.get("path")
+        python_path = subl_settings.get("interpreter")
         if not python_path:
             config = sublime.yes_no_cancel_dialog(
                 "Python interpreter not configured.\nConfigure now?",
