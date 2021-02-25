@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request_task
+from .remote import RequestMessage, ResponseMessage, request
 
 
 logger = logging.getLogger(__name__)
@@ -14,11 +14,17 @@ logger.addHandler(sh)
 
 
 def format_code(src: str) -> "ResponseMessage":
-    """get sublime formatted PEP formatted data"""
+    """prettify code
+
+    Raises:
+        InvalidInput
+        InvalidResponse
+        ServerOffline
+    """
 
     message = RequestMessage("textDocument.formatting")
     message.params = {"uri": src}
-    response = request_task(message.to_rpc())
+    response = request(message.to_rpc())
     logger.debug(response)
     response_message = ResponseMessage.from_rpc(response)
     return response_message

@@ -38,7 +38,26 @@ class ServerOffline(ConnectionError):
     """Server offline"""
 
 
+class PortInUse(OSError):
+    """Port in use"""
+
+
+class InvalidInput(TypeError):
+    """Input type invalid. Required type `str`"""
+
+
 RPC_SEPARATOR = b"\r\n\r\n"
+
+
+def content_length(header: bytes) -> int:
+    """get content length"""
+
+    decoded = header.decode("ascii")
+    found = findall(r"Content-Length: (\d*)\s?", decoded)
+    if not any(found):
+        logger.error("unabe parse from %s", header)
+        raise ValueError("unable fetch content length from %s" % decoded)
+    return int(found[0])
 
 
 def get_rpc_content(message: bytes) -> str:
@@ -46,22 +65,28 @@ def get_rpc_content(message: bytes) -> str:
 
     try:
         header, content = message.split(RPC_SEPARATOR)
-    except ValueError:
-        raise InvalidResponse
+    except (ValueError, TypeError) as err:
+        logger.error("unable parse rpc message from %s", message)
+        raise ContentInvalid from err
 
-    def get_content_length(header: bytes) -> int:
-        """get content length"""
-        decoded = header.decode("ascii")
-        found = findall(r"Content-Length: (\d*)\s?", decoded)
-        if not any(found):
-            raise ValueError("unable fetch content length from '%s'" % decoded)
-        return int(found[0])
-
-    required_len = get_content_length(header)
-    if len(content) < required_len:
-        raise ContentIncomplete
-    if len(content) > required_len:
-        raise ContentOverflow
+    if len(content) < content_length(header):
+        logger.debug(
+            "Length want: %s expected: %s", len(content), content_length(header)
+        )
+        raise ContentIncomplete(
+            "Content length: want: %s, expected: %s",
+            len(content),
+            content_length(header),
+        )
+    if len(content) > content_length(header):
+        logger.debug(
+            "Length want: %s expected: %s", len(content), content_length(header)
+        )
+        raise ContentOverflow(
+            "Content length: want: %s, expected: %s",
+            len(content),
+            content_length(header),
+        )
     return content.decode("utf-8")
 
 
@@ -117,6 +142,10 @@ class ResponseMessage:
 
     @classmethod
     def from_rpc(cls, message):
+        """load message from rpc
+
+        Raises:
+            json.JSONDecodeError"""
         parsed = json.loads(message)
         return cls(parsed["id"], parsed["results"], parsed["error"])
 
@@ -125,9 +154,14 @@ def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
     """handle socket request
 
     Raises:
-        ConnectionError
+        InvalidInput
         InvalidResponse
+        ServerOffline
     """
+
+    if not isinstance(message, str):
+        raise InvalidInput
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
             conn.connect((host, port))
@@ -141,36 +175,26 @@ def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
                     content = get_rpc_content(b"".join(recv))
                 except ContentIncomplete:
                     continue
-                except ContentOverflow:
-                    logger.error("content overflow")
-                    raise InvalidResponse from None
+                except ContentOverflow as err:
+                    raise InvalidResponse from err
                 else:
-                    logger.debug(content)
                     return content
 
     except ConnectionError:
         raise ServerOffline from None
 
 
-def server_subproces(activate_path=None) -> None:
+def server_subproces(server_path, server_module, activate_path=None) -> None:
     """server subprocess
 
     Raises:
         ServerError
     """
     activator = [] if not activate_path else activate_path + ["&&"]
-    run_server_cmd = activator + ["python", "-m", "core.server.main"]
+    run_server_cmd = activator + ["python", "-m", server_module]
     logger.debug(run_server_cmd)
 
-    def get_parent(path, level=1):
-        """get leveled dirname"""
-        new_path = path
-        for _ in range(level):
-            new_path = os.path.dirname(new_path)
-        return new_path
-
-    workdir = get_parent(os.path.abspath(__file__), 3)
-    logger.debug(__file__)
+    workdir = server_path
     logger.debug(workdir)
 
     # use current environment if not defined
@@ -204,51 +228,46 @@ def server_subproces(activate_path=None) -> None:
             )
 
         _, serr = server_proc.communicate()
+        err_message = "\n".join(serr.decode().splitlines())
+
         if server_proc.returncode == 123:
-            raise OSError
+            raise PortInUse(err_message)
 
         if server_proc.returncode == 1:
-            logger.error("server error\n%s", serr.decode().replace(os.linesep, "\n"))
-            raise ServerError
+            logger.debug("server error:\n%s", err_message)
+            raise ServerError(err_message)
 
-    except FileNotFoundError:
-        logger.exception("python not found in path", exc_info=True)
-        raise ServerError from None
-    except OSError:
+    except PortInUse:
         logger.debug("OSError, port in use")
-    except Exception:
+    except FileNotFoundError as err:
+        logger.exception("python not found in path", exc_info=True)
+        raise ServerError from err
+    except Exception as err:
         logger.exception("cannot run_server", exc_info=True)
-        raise ServerError from None
+        raise ServerError from err
 
 
-def run_server(activate_path=None) -> None:
+def run_server(server_path, server_module, activate_path=None) -> None:
     """running server thread
 
     Raises:
         ServerError
     """
 
-    logger.debug(activate_path)
-
-    thread = threading.Thread(target=server_subproces, args=(activate_path,))
+    thread = threading.Thread(
+        target=server_subproces, args=(server_path, server_module, activate_path,)
+    )
     thread.start()
 
 
-def request_task(message: "Union[RequestMessage, str]") -> "Dict[str, Any]":
-    """request task"""
-
-    if isinstance(message, RequestMessage):
-        v_message = message.to_rpc()
-    else:
-        v_message = message
-
-    return request(v_message)
-
-
 def ping(*args) -> "ResponseMessage":
-    """ping test"""
+    """ping test
 
-    return request_task(RequestMessage("ping", args))
+    Raises:
+        ServerOffline
+    """
+
+    return RequestMessage("ping", args).to_rpc()
 
 
 def initialize(*args):
@@ -258,19 +277,31 @@ def initialize(*args):
 
 
 def shutdown(*args) -> "ResponseMessage":
-    """shutdown server"""
+    """shutdown server
+    
+    Raises:
+        InvalidInput
+        InvalidResponse
+        ServerOffline
+    """
 
     message = RequestMessage("exit", args)
-    response = request_task(message)
+    response = request(message.to_rpc())
     response_message = ResponseMessage.from_rpc(response)
     return response_message
 
 
 def change_workspace(workspace_dir: str) -> "ResponseMessage":
-    """change workspace directory"""
+    """change workspace directory
+
+    Raises:
+        InvalidInput
+        InvalidResponse
+        ServerOffline
+    """
 
     message = RequestMessage("document.changeWorkspace")
     message.params = {"uri": workspace_dir}
-    response = request_task(message.to_rpc())
+    response = request(message.to_rpc())
     response_message = ResponseMessage.from_rpc(response)
     return response_message

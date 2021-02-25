@@ -9,14 +9,18 @@ import os
 from .sublimetext import client
 from .sublimetext import document
 from .sublimetext import settings as python_settings
-from .sublimetext import ServerOffline, ServerError
+from .sublimetext import ServerOffline, ServerError, InvalidInput
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
 sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
 sh.setLevel(logging.DEBUG)
+fh = logging.FileHandler(os.path.join(os.path.dirname(__file__), "plugins.log"))
+fh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+fh.setLevel(logging.ERROR)
 logger.addHandler(sh)
+logger.addHandler(fh)
 
 
 class StateManager:
@@ -70,27 +74,31 @@ class Settings:
         )
 
     def load_settings(self):
-        settings = sublime.load_settings("Pytools.sublime-settings")
+        sublime_settings = sublime.load_settings("Pytools.sublime-settings")
 
-        self.autocomplete = settings.get("autocomplete", True)
-        self.documentation = settings.get("documentation", True)
-        self.format_document = settings.get("format_document", True)
-        self.linter = settings.get("linter", True)
-        return settings
+        self.autocomplete = sublime_settings.get("autocomplete", True)
+        self.documentation = sublime_settings.get("documentation", True)
+        self.format_document = sublime_settings.get("format_document", True)
+        self.linter = sublime_settings.get("linter", True)
+        return sublime_settings
+
+    def interpreter_change():
+        """on interpreter settings change"""
+
+        sublime.active_window().run_command("pytools_shutdownserver")
 
     def initialize(self) -> None:
         """initialize"""
 
-        settings = self.load_settings()
+        sublime_settings = self.load_settings()
 
-        def interpreter_change():
-            sublime.active_window().run_command("pytools_shutdownserver")
-
-        settings.add_on_change("interpreter", interpreter_change)   # interpreter
-        settings.add_on_change("autocomplete", self.load_settings)
-        settings.add_on_change("documentation", self.load_settings)
-        settings.add_on_change("format_document", self.load_settings)
-        settings.add_on_change("linter", self.load_settings)
+        sublime_settings.add_on_change(
+            "interpreter", self.interpreter_change
+        )  # interpreter
+        sublime_settings.add_on_change("autocomplete", self.load_settings)
+        sublime_settings.add_on_change("documentation", self.load_settings)
+        sublime_settings.add_on_change("format_document", self.load_settings)
+        sublime_settings.add_on_change("linter", self.load_settings)
 
     def disable_all(self) -> None:
         """disable all services"""
@@ -174,6 +182,8 @@ def check_connection():
     except ServerOffline:
         logger.debug("connection error")
         SERVER_STATE.online = False
+    except Exception:
+        logger.error("check connection", exc_info=True)
     else:
         SERVER_STATE.online = True
 
@@ -207,7 +217,7 @@ def valid_attribute(view, pos):
 
 
 @request_queue
-def change_workspace(path_directory):
+def change_workspace(path_directory) -> None:
     """change workspace
 
     Raises:
@@ -215,10 +225,13 @@ def change_workspace(path_directory):
 
     if SERVER_STATE.workspace_directory == path_directory:
         return
+
     logger.debug("change workspace")
+
     results = client.change_workspace(path_directory)
+    logger.debug(results)
     SERVER_STATE.workspace_directory = results.results["workspace_directory"]
-    return
+    logger.debug(SERVER_STATE.workspace_directory)
 
 
 class Diagnostic:
@@ -239,7 +252,8 @@ class Diagnostic:
         """build from rpc
 
         Raise:
-            KeyError"""
+            KeyError
+        """
 
         pos = view.text_point(message["line"] - 1, message["column"])
         region = view.line(pos) if message["column"] == 0 else view.word(pos)
@@ -251,6 +265,16 @@ class Diagnostic:
 def status_message(message: str):
     """show message in status bar"""
     sublime.active_window().status_message(message)
+
+
+def build_completion(completions: "Iterable") -> "Iterator[Any, Any]":
+    """build completion"""
+
+    for completion in completions:
+        yield (
+            "%s\t%s" % (completion["label"], completion["type"]),
+            completion["label"],
+        )
 
 
 class PyTools(sublime_plugin.EventListener):
@@ -281,36 +305,30 @@ class PyTools(sublime_plugin.EventListener):
         source_region = sublime.Region(start, end)
         line, character = view.rowcol(end)  # get rowcol at end selection
 
-        def make_completion(completions):
-            for completion in completions:
-                yield (
-                    "%s\t%s" % (completion["label"], completion["type"]),
-                    completion["label"],
-                )
-
         source = view.substr(source_region)
-
-        def fetch_completion(source, line, character):
-            try:
-                change_workspace(os.path.dirname(view.file_name()))
-                results = client.fetch_completion(source, line, character)
-            except ServerOffline:
-                return None
-            else:
-                if results.error:
-                    status_message(results.error)
-                    return
-                return results
 
         if self.cached_source == source:
             self.completion = self.cached_completion
         else:
             self.cached_source = source
-            results = fetch_completion(source, line, character)
-            self.completion = (
-                [] if not results else list(make_completion(results.results))
-            )
-            self.cached_completion = self.completion
+            try:
+                change_workspace(os.path.dirname(view.file_name()))
+                results = client.fetch_completion(source, line, character)
+            except ServerOffline:
+                return None
+            except Exception:
+                logger.error("fetch completion", exc_info=True)
+                return None
+            else:
+                if results.error:
+                    status_message(results.error)
+                    return None
+    
+                self.completion = (
+                    list(build_completion(results.results)),
+                    sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
+                    )
+                self.cached_completion = self.completion
 
         document.show_completions(view)
 
@@ -326,24 +344,15 @@ class PyTools(sublime_plugin.EventListener):
         ):
             return None
 
-        def build(completion):
-            if not completion:
-                return None
-            return (
-                completion,
-                sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
-            )
-
-        if isinstance(self.completion, list):
+        if self.completion:
             completion = self.completion if prefix.startswith(self.old_prefix) else None
             self.completion = None
-            return build(completion)
+            return completion
 
         thread = threading.Thread(
             target=self.fetch_completion, args=(view, prefix, locations[0])
         )
         thread.start()
-        return None
 
     @can_run_server
     @process_lock
@@ -366,11 +375,14 @@ class PyTools(sublime_plugin.EventListener):
 
         try:
             change_workspace(os.path.dirname(view.file_name()))
+            logger.debug("fetch_documentation")
             results = client.fetch_documentation(
                 view.substr(source_region), line, character
             )
         except ServerOffline:
             pass
+        except Exception:
+            logger.error("fetch documentation", exc_info=True)
         else:
             if results.error:
                 status_message(results.error)
@@ -450,6 +462,8 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
             results = client.format_code(src)
         except ServerOffline:
             pass
+        except Exception:
+            logger.error("format document", exc_info=True)
         else:
             if results.error:
                 status_message(results.error)
@@ -480,6 +494,8 @@ class PytoolsDiagnoseCommand(sublime_plugin.TextCommand):
             results = client.get_diagnostic(path)
         except ServerOffline:
             pass
+        except Exception:
+            logger.error("get diagnostic", exc_info=True)
         else:
             logger.debug(results)
 
@@ -556,12 +572,10 @@ class PytoolsChangeWorkspaceCommand(sublime_plugin.TextCommand):
     @server_valid
     def run(self, edit, path=None):
         view = self.view
-        if not valid_source(view):
+        file_name = view.file_name()
+        if not all([valid_source(view), file_name]):
             return
 
-        file_name = view.file_name()
-        if not file_name:
-            return
         path = os.path.dirname(file_name)
         logger.debug("init change_workspace")
 
@@ -570,6 +584,8 @@ class PytoolsChangeWorkspaceCommand(sublime_plugin.TextCommand):
                 change_workspace(path)
             except ServerOffline:
                 pass
+            except Exception:
+                logger.error("change workspace", exc_info=True)
 
         thread = threading.Thread(target=change_thread, args=(path,))
         thread.start()
@@ -591,6 +607,8 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
             response = client.shutdown()
         except ServerOffline:
             pass
+        except Exception:
+            logger.error("shutdown server", exc_info=True)
         else:
             SERVER_STATE.reset()
             logger.debug("finish shutdown server")
@@ -600,8 +618,8 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     """Run server command"""
 
     def run(self):
-        subl_settings = sublime.load_settings("Pytools.sublime-settings")
-        python_path = subl_settings.get("interpreter")
+        sublime_settings = sublime.load_settings("Pytools.sublime-settings")
+        python_path = sublime_settings.get("interpreter")
         if not python_path:
             config = sublime.yes_no_cancel_dialog(
                 "Python interpreter not configured.\nConfigure now?",
@@ -625,15 +643,20 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
         activate_path = python_settings.find_activate(python_path)
         env_path = python_settings.find_environment(python_path)
-        activate = [path for path in (activate_path, env_path) if path]
+        server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core")
+        server_module = "server.main"
+        activate_path = [path for path in (activate_path, env_path) if path]
         try:
             logger.debug("running server")
-            client.run_server(activate)
+            logger.debug("%s, %s, %s", server_path, server_module, activate_path)
+            client.run_server(server_path, server_module, activate_path=activate_path)
             SERVER_STATE.online = True
         except ServerError:
             logger.debug("server error")
             SERVER_STATE.error = True
             SERVER_STATE.online = False
+        except Exception:
+            logger.error("run server", exc_info=True)
         else:
             logger.debug("server ready")
             self.window.status_message("Server ready")
@@ -644,7 +667,10 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
     """Load python interpreter command"""
 
     def run(self):
-        python_settings.set_interpreter(self.window)
+        try:
+            python_settings.set_interpreter(self.window)
+        except Exception:
+            logger.error("set interpreter", exc_info=True)
 
 
 class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):
