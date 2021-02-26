@@ -1,6 +1,7 @@
 """document operation"""
 
 
+import os
 import sublime  # pylint: disable=import-error
 import logging
 
@@ -38,9 +39,19 @@ def show_popup(view, content, location, callback):
     )
 
 
-def open(view, path_encoded):
-    """Open file"""
-    view.window().open_file(path_encoded, sublime.ENCODED_POSITION)
+def open_link(view, link):
+    """open link"""
+
+    if not link:
+        return None
+
+    view_path = os.path.abspath(view.file_name())
+    path = "{mod_path}:{line}:{character}".format(
+        mod_path=view_path if link["path"] is None else link["path"],
+        line=0 if link["line"] is None else link["line"],
+        character=0 if link["character"] is None else link["character"] + 1,
+    )
+    return view.window().open_file(path, sublime.ENCODED_POSITION)
 
 
 class Update:

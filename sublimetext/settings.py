@@ -96,7 +96,7 @@ def set_interpreter(window):
     def input_path():
         def save_input_settings(path):
             if ispython_path(path):
-                save_settings("path", path)
+                save_settings("interpreter", path)
 
         window.show_input_panel(
             caption="python path",
@@ -111,7 +111,7 @@ def set_interpreter(window):
             return  # cancel if index == -1
 
         if index < len(python_path):
-            save_settings("path", python_binary[index])
+            save_settings("interpreter", python_binary[index])
         else:
             input_path()
 

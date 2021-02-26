@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request_task
+from .remote import RequestMessage, ResponseMessage, request
 
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,13 @@ logger.addHandler(sh)
 
 
 def fetch_documentation(src: str, line: str, character: str) -> "ResponseMessage":
-    """get sublime formatted documentation data"""
+    """get documentation
+
+    Raises:
+        InvalidInput
+        InvalidResponse
+        ServerOffline
+    """
 
     message = RequestMessage("textDocument.hover")
     message.params = {
@@ -22,7 +28,7 @@ def fetch_documentation(src: str, line: str, character: str) -> "ResponseMessage
         "location": {"line": line, "character": character},
     }
     logger.debug(message)
-    response = request_task(message.to_rpc())
+    response = request(message.to_rpc())
     logger.debug(response)
     response_message = ResponseMessage.from_rpc(response)
     return response_message

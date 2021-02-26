@@ -5,6 +5,7 @@ from .remote import (
     run_server,
     ServerError,
     ServerOffline,
+    InvalidInput,
     ping,
     initialize,
     shutdown,
