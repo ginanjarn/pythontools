@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request_task
+from .remote import RequestMessage, ResponseMessage, request
 
 
 logger = logging.getLogger(__name__)
@@ -14,14 +14,20 @@ logger.addHandler(sh)
 
 
 def fetch_completion(src: str, line: str, character: str) -> "ResponseMessage":
-    """get completion data"""
+    """get completion data
+
+    Raises:
+        InvalidInput
+        InvalidResponse
+        ServerOffline
+    """
 
     message = RequestMessage("textDocument.completion")
     message.params = {
         "uri": src,
         "location": {"line": line, "character": character},
     }
-    response = request_task(message.to_rpc())
+    response = request(message.to_rpc())
     logger.debug(response)
     response_message = ResponseMessage.from_rpc(response)
     return response_message

@@ -47,7 +47,7 @@ def to_rpc(helps: "List[Name]") -> "Dict[str, Any]":
     def make_rpc(helps):
         help_ = helps[0]
 
-        header_template = '<code><a href="">{module}.{name}</a> [<em>{type_}</em>]</code>'.format(
+        header_template = '<code><a href="">{module}.{name}</a> (<em>{type_}</em>)</code>'.format(
             module=help_.module_name, name=help_.name, type_=help_.type
         )
 

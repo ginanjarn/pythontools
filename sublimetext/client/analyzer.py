@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request_task
+from .remote import RequestMessage, ResponseMessage, request
 
 
 logger = logging.getLogger(__name__)
@@ -14,14 +14,20 @@ logger.addHandler(sh)
 
 
 def get_diagnostic(path: str) -> "ResponseMessage":
-    """get diagnostic data"""
+    """get diagnostic data
+
+    Raises:
+        InvalidInput
+        InvalidResponse
+        ServerOffline
+    """
 
     message = RequestMessage("textDocument.get_diagnostic")
     message.params = {
         "uri": path,
     }
     logger.debug(message)
-    response = request_task(message.to_rpc())
+    response = request(message.to_rpc())
     logger.debug(response)
     response_message = ResponseMessage.from_rpc(response)
     return response_message

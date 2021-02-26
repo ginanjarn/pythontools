@@ -1,7 +1,7 @@
 """SublimeText"""
 
 
-from .client import ServerError, ServerOffline
+from .client import ServerError, ServerOffline, InvalidInput
 from . import document, settings, client
 
 __all__ = [
@@ -10,4 +10,5 @@ __all__ = [
     "client",
     "ServerOffline",
     "ServerError",
+    "InvalidInput",
 ]
