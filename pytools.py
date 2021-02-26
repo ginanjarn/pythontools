@@ -82,7 +82,7 @@ class Settings:
         self.linter = sublime_settings.get("linter", True)
         return sublime_settings
 
-    def interpreter_change():
+    def interpreter_change(self):
         """on interpreter settings change"""
 
         sublime.active_window().run_command("pytools_shutdownserver")
@@ -180,7 +180,7 @@ def check_connection():
         results = client.ping()
         logger.debug(results)
     except ServerOffline:
-        logger.debug("connection error")
+        logger.debug("ServerOffline")
         SERVER_STATE.online = False
     except Exception:
         logger.error("check connection", exc_info=True)
@@ -315,6 +315,7 @@ class PyTools(sublime_plugin.EventListener):
                 change_workspace(os.path.dirname(view.file_name()))
                 results = client.fetch_completion(source, line, character)
             except ServerOffline:
+                logger.debug("ServerOffline")
                 return None
             except Exception:
                 logger.error("fetch completion", exc_info=True)
@@ -380,6 +381,7 @@ class PyTools(sublime_plugin.EventListener):
                 view.substr(source_region), line, character
             )
         except ServerOffline:
+            logger.debug("ServerOffline")
             pass
         except Exception:
             logger.error("fetch documentation", exc_info=True)
@@ -461,6 +463,7 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
         try:
             results = client.format_code(src)
         except ServerOffline:
+            logger.debug("ServerOffline")
             pass
         except Exception:
             logger.error("format document", exc_info=True)
@@ -493,6 +496,7 @@ class PytoolsDiagnoseCommand(sublime_plugin.TextCommand):
         try:
             results = client.get_diagnostic(path)
         except ServerOffline:
+            logger.debug("ServerOffline")
             pass
         except Exception:
             logger.error("get diagnostic", exc_info=True)
@@ -606,6 +610,7 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
         try:
             response = client.shutdown()
         except ServerOffline:
+            logger.debug("ServerOffline")
             pass
         except Exception:
             logger.error("shutdown server", exc_info=True)

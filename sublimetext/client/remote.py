@@ -267,7 +267,9 @@ def ping(*args) -> "ResponseMessage":
         ServerOffline
     """
 
-    return RequestMessage("ping", args).to_rpc()
+    message = RequestMessage("ping", args)
+    response = request(message.to_rpc())
+    return ResponseMessage.from_rpc(response)
 
 
 def initialize(*args):
