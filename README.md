@@ -80,7 +80,7 @@ Open command palette (`Ctrl+Shift+P`) `->` `Lint module`.
 
 ## TROUBLESHOOT
 
-* This plugin conflict with other pyhon completion plugin. Try to disable or remove the plugin.
+* This plugin conflict with other python completion plugin. Try to disable or remove the plugin.
 
 * Python interpreter must be setup.
   
