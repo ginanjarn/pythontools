@@ -313,7 +313,13 @@ class PyTools(sublime_plugin.EventListener):
         else:
             self.cached_source = source
             try:
-                change_workspace(os.path.dirname(view.file_name()))
+                folders = view.window().folders()
+                logger.debug(folders)
+                working_folders = [folder for folder in folders if folder in view.file_name()]
+                logger.debug(working_folders)
+                path = working_folders[0] if working_folders else os.path.dirname(view.file_name)
+                change_workspace(path)
+                # change_workspace(os.path.dirname(view.file_name()))
                 results = client.fetch_completion(source, line, character)
             except ServerOffline:
                 logger.debug("ServerOffline")
@@ -379,7 +385,13 @@ class PyTools(sublime_plugin.EventListener):
         line, character = view.rowcol(end)  # get rowcol at end selection
 
         try:
-            change_workspace(os.path.dirname(view.file_name()))
+            folders = view.window().folders()
+            logger.debug(folders)
+            working_folders = [folder for folder in folders if folder in view.file_name()]
+            logger.debug(working_folders)
+            path = working_folders[0] if working_folders else os.path.dirname(view.file_name)
+            change_workspace(path)
+            # change_workspace(os.path.dirname(view.file_name()))
             logger.debug("fetch_documentation")
             results = client.fetch_documentation(
                 view.substr(source_region), line, character
@@ -589,7 +601,11 @@ class PytoolsChangeWorkspaceCommand(sublime_plugin.TextCommand):
 
         def change_thread(path):
             try:
+                folders = view.window().folders()
+                working_folders = [folder for folder in folders if folder in view.file_name()]
+                path = working_folders[0] if working_folders else os.path.dirname(view.file_name)
                 change_workspace(path)
+                # change_workspace(path)
             except ServerOffline:
                 pass
             except Exception:
@@ -652,8 +668,9 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
         activate_path = python_settings.find_activate(python_path)
         env_path = python_settings.find_environment(python_path)
-        server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core")
-        server_module = "server.main"
+        server_path = os.path.dirname(os.path.abspath(__file__))
+        # server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core")
+        server_module = "core.server.main"
         activate_path = [path for path in (activate_path, env_path) if path]
         try:
             logger.debug("running server")

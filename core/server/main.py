@@ -7,7 +7,7 @@ import socket
 import sys
 import logging
 
-from . import service
+from core.server import service
 
 
 logger = logging.getLogger(__name__)
@@ -76,14 +76,14 @@ def get_rpc_content(message: bytes) -> str:
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentIncomplete(
-            "Length: want: %s, expected: %s", len(content), content_length(header),
+            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
         )
     if len(content) > content_length(header):
         logger.debug(
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentOverflow(
-            "Length: want: %s, expected: %s", len(content), content_length(header),
+            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
         )
     return content.decode("utf-8")
 
@@ -107,7 +107,7 @@ class RequestMessage:
     @classmethod
     def from_rpc(cls, message: str) -> "RequestMessage":
         """load RequestMessage from rpc
-        
+
         Result:
             RequestMessage
 
@@ -158,10 +158,10 @@ class Server:
     ) -> None:
         """listen socket request"""
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((host, port))
-            s.listen()
-            conn, addr = s.accept()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((host, port))
+            sock.listen()
+            conn, addr = sock.accept()
             with conn:
                 print("Connected by", addr)
                 recv = []
@@ -240,7 +240,8 @@ class Server:
     def main_loop(self, once: bool = False) -> None:
         """server main loop"""
 
-        self.next = False if once else True
+        if once:
+            self.next = False
 
         # loop until interrupted
         while True:

@@ -26,6 +26,10 @@ class ContentOverflow(ValueError):
     """Content too large"""
 
 
+class ContentInvalid(ValueError):
+    """Content invalid"""
+
+
 class InvalidResponse(Exception):
     """Invalid response"""
 
@@ -80,14 +84,14 @@ def get_rpc_content(message: bytes) -> str:
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentIncomplete(
-            "Length: want: %s, expected: %s", len(content), content_length(header),
+            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
         )
     if len(content) > content_length(header):
         logger.debug(
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentOverflow(
-            "Length: want: %s, expected: %s", len(content), content_length(header),
+            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
         )
     return content.decode("utf-8")
 
@@ -291,7 +295,7 @@ def initialize(*args: "Any") -> "ResponseMessage":
 
 def shutdown(*args: "Any") -> "ResponseMessage":
     """shutdown server
-    
+
     Raises:
         InvalidInput
         InvalidResponse
