@@ -26,5 +26,4 @@ def format_code(src: str) -> "ResponseMessage":
     message.params = {"uri": src}
     response = request(message.to_rpc())
     logger.debug(response)
-    response_message = ResponseMessage.from_rpc(response)
-    return response_message
+    return ResponseMessage.from_rpc(response)

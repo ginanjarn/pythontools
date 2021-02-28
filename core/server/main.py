@@ -57,7 +57,13 @@ def content_length(header: bytes) -> int:
 
 
 def get_rpc_content(message: bytes) -> str:
-    """get rpc content"""
+    """get rpc content
+
+    Raises:
+        ContentInvalid
+        ContentIncomplete
+        ContentOverflow
+    """
 
     try:
         header, content = message.split(RPC_SEPARATOR)
@@ -70,24 +76,21 @@ def get_rpc_content(message: bytes) -> str:
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentIncomplete(
-            "Content length: want: %s, expected: %s",
-            len(content),
-            content_length(header),
+            "Length: want: %s, expected: %s", len(content), content_length(header),
         )
     if len(content) > content_length(header):
         logger.debug(
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentOverflow(
-            "Content length: want: %s, expected: %s",
-            len(content),
-            content_length(header),
+            "Length: want: %s, expected: %s", len(content), content_length(header),
         )
     return content.decode("utf-8")
 
 
 def create_rpc_message(message: str) -> bytes:
     """create rpc message"""
+
     content_encoded = message.encode("utf-8")
     header = "Content-Length: %s" % (len(content_encoded))
     return b"%s%s%s" % (header.encode("ascii"), RPC_SEPARATOR, content_encoded)
@@ -123,17 +126,17 @@ class ResponseMessage:
         *,
         results: "Dict[str, Any]" = None,
         error: "Dict[str, Any]" = None
-    ):
+    ) -> None:
         self.id_ = id_
         self.results = results
         self.error = error
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "{id_}\n{results}\n{error}\n".format(
             id_=self.id_, results=self.results, error=self.error
         )
 
-    def to_rpc(self):
+    def to_rpc(self) -> str:
         """export to rpc
 
         Results:
@@ -189,7 +192,7 @@ class Server:
                 logger.debug(result)
                 conn.sendall(create_rpc_message(result))
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.service = {}
         self.capability = []
         self.next = True
@@ -200,13 +203,15 @@ class Server:
         self, method: str, callback: "Callback[Dict[str, Any]Optional[Any]]"
     ) -> None:
         """Register service capability"""
+
         self.service[method] = callback
 
     def process(self, message: str) -> str:
         """process operation
 
         Results:
-            ResponseMessage json string"""
+            ResponseMessage json string
+        """
 
         try:
             parsed = RequestMessage.from_rpc(message)
@@ -232,7 +237,7 @@ class Server:
 
         return response.to_rpc()
 
-    def main_loop(self, once=False):
+    def main_loop(self, once: bool = False) -> None:
         """server main loop"""
 
         self.next = False if once else True
@@ -243,7 +248,8 @@ class Server:
                 break
             Server.listen(self.process)
 
-    def ping(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+    @staticmethod
+    def ping(params: "Dict[str, Any]") -> "Dict[str, Any]":
         logger.info("ping\nmessage = %s", params)
         return params
 

@@ -6,7 +6,9 @@ import os
 import re
 
 
-def save_settings(key, value):
+def save_settings(key: str, value: "Any") -> None:
+    """save settings to SublimeText settings file"""
+
     settings = sublime.load_settings("Pytools.sublime-settings")
     settings.set(key, value)
     sublime.save_settings("Pytools.sublime-settings")
@@ -14,27 +16,32 @@ def save_settings(key, value):
 
 PYTHON_BIN = "python.exe" if os.name == "nt" else os.path.join("bin", "python")
 PATH_BIN = "Scripts" if os.name == "nt" else "bin"
+ACTIVATE_BIN = "Scripts\\activate" if os.name == "nt" else r"bin/activate"
 
 
-def ispython_path(path):
+def ispython_path(path: str) -> bool:
     """check if python path"""
+
     return os.path.isfile(os.path.join(path, PYTHON_BIN))
 
 
-def find_python():
-    """find python in path"""
+def find_python() -> "Iterable[str]":
+    """find python installed in PATH"""
+
     for path in os.environ["PATH"].split(os.pathsep):
         if ispython_path(path):
             yield path
 
 
-def any_match_conda(name):
+def any_match_conda(name: str) -> bool:
     """any match *conda* character"""
+
     return any(re.findall(r"\s*conda.*", name))
 
 
-def find_conda_envs(conda_directory):
+def find_conda_envs(conda_directory: str) -> "Iterable[str]":
     """get conda envs"""
+
     envs_path = os.path.join(conda_directory, "envs")
     for env_directory in os.listdir(envs_path):
         env_path = os.path.join(envs_path, env_directory)
@@ -42,8 +49,9 @@ def find_conda_envs(conda_directory):
             yield env_path
 
 
-def find_conda():
-    """find any conda installed in path"""
+def find_conda() -> "Iterable[str]":
+    """find conda installed in PATH"""
+
     home = os.path.expanduser("~")
     for directory in os.listdir(home):
         path = os.path.join(home, directory)
@@ -52,46 +60,51 @@ def find_conda():
             yield from find_conda_envs(path)
 
 
-def find_activate(python_path):
-    """find environment activator"""
+def find_activate(python_path: str) -> str:
+    """find environment activator
 
-    def find_path(dir_path: str):
-        activate_path = "Scripts\\activate" if os.name == "nt" else r"bin/activate"
-        paths = dir_path.split(os.sep)
+    Raises:
+        FileNotFoundError
+    """
 
-        for root in range(len(paths)):
-            prefix = os.sep.join(paths[:root])
-            path = os.path.join(prefix, activate_path)
-            if os.path.isfile(path):
-                return path
+    paths = python_path.split(os.sep)
 
-        raise FileNotFoundError("unable find `activate` file")
+    for root in range(len(paths)):
+        prefix = os.sep.join(paths[:root])
+        path = os.path.join(prefix, ACTIVATE_BIN)
+        if os.path.isfile(path):
+            return path  # path found
 
-    return find_path(python_path)
-
-
-def find_environment(python_path):
-    """find environment path"""
-
-    def find_path(dir_path: str):
-        paths = dir_path.split(os.sep)
-
-        for root in range(len(paths), 0, -1):  # find from latest path
-            prefix = os.sep.join(paths[:root])
-            path = os.path.join(prefix, PYTHON_BIN)
-            if os.path.isfile(path):
-                return prefix
-
-        raise FileNotFoundError("unable find `python` file")
-
-    return find_path(python_path)
+    # else
+    raise FileNotFoundError("unable find `activate` file")
 
 
-def set_interpreter(window):
+def find_environment(python_path: str) -> str:
+    """find environment path
+
+    Raises:
+        FileNotFoundError
+    """
+
+    paths = python_path.split(os.sep)
+
+    for root in range(len(paths), 0, -1):  # find from latest path
+        prefix = os.sep.join(paths[:root])
+        path = os.path.join(prefix, PYTHON_BIN)
+        if os.path.isfile(path):
+            return prefix  # path found
+
+    # else
+    raise FileNotFoundError("unable find `python` file")
+
+
+def set_interpreter(window: "sublime.Window") -> None:
+    """set python interpreter"""
+
     sys_python = find_python()
     conda = find_conda()
     python_path = list(sys_python) + list(conda)
-    python_binary = [os.path.join(ipr, PYTHON_BIN) for ipr in python_path]
+    python_binary = [os.path.join(path, PYTHON_BIN) for path in python_path]
 
     def input_path():
         def save_input_settings(path):
