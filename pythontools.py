@@ -6,10 +6,10 @@ import sublime_plugin  # pylint: disable=import-error
 import threading
 import logging
 import os
-from .sublimetext import client
-from .sublimetext import document
-from .sublimetext import settings as python_settings
-from .sublimetext import ServerOffline, ServerError, InvalidInput
+from .core.sublimetext import client
+from .core.sublimetext import document
+from .core.sublimetext import settings as python_settings
+from .core.sublimetext import ServerOffline, ServerError, InvalidInput
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
