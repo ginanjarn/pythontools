@@ -277,10 +277,10 @@ class Server:
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            completions = service.completion.complete(
+            completions = service.complete(
                 src, line=line, column=character, project=project
             )
-            return service.completion.to_rpc(completions)
+            return service.to_rpc(completions)
         except KeyError as err:
             raise InvalidParams from err
         except ValueError as err:
@@ -303,16 +303,17 @@ class Server:
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            helps = service.hover.get_documentation(
+            helps = service.get_documentation(
                 src, line=line, column=character, project=project
             )
-            return service.hover.to_rpc(helps)
+            return service.to_rpc(helps)
         except KeyError as err:
             raise InvalidParams from err
         except ValueError as err:
             raise InvalidParams from err
 
-    def document_format(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+    @staticmethod
+    def document_format(params: "Dict[str, Any]") -> "Dict[str, Any]":
         """document format
 
         Raises:

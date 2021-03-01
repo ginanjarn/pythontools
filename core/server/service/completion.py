@@ -14,6 +14,10 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
+class Completions(list):
+    """completion list"""
+
+
 def build_rpc(completions: List[Completion]) -> Iterator[Dict[str, Any]]:
     """build rpc content"""
 
@@ -29,7 +33,7 @@ def to_rpc(completions: List[Completion]) -> List[Dict[str, Any]]:
 
 def complete(
     source: str, *, line: int, column: int, project: Project = None
-) -> List[Completion]:
+) -> Completions:
     """complete script at following pos(line, column)
 
     Raises:
@@ -38,4 +42,4 @@ def complete(
 
     script = Script(code=source, project=project)
     results = script.complete(line=line, column=column)
-    return results
+    return Completions(results)

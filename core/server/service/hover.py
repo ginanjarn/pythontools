@@ -15,6 +15,10 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
+class Documentations(list):
+    """documentation list"""
+
+
 def escape_space(doc: str) -> str:
     """replace 'double space' -> '&nbsp;'"""
     return doc.replace("  ", "&nbsp;&nbsp;")
@@ -68,7 +72,7 @@ def to_rpc(helps: List[BaseName]) -> Optional[Dict[str, Any]]:
 
 def get_documentation(
     source: str, *, line: int, column: int, project: Project = None
-) -> List[BaseName]:
+) -> Documentations:
     """complete script at following pos(line, column)
 
     Raises:
@@ -77,4 +81,4 @@ def get_documentation(
 
     script = Script(code=source, project=project)
     results = script.help(line=line, column=column)
-    return results
+    return Documentations(results)
