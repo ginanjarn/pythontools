@@ -266,8 +266,7 @@ class Server:
             InvalidParams
             """
 
-        path = ""
-        proj = (
+        project = (
             None
             if not self.workspace_directory
             else service.jedi_project(self.workspace_directory)
@@ -278,9 +277,10 @@ class Server:
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            return service.complete(
-                source=src, line=line, column=character, path=path, project=proj
+            completions = service.completion.complete(
+                src, line=line, column=character, project=project
             )
+            return service.completion.to_rpc(completions)
         except KeyError as err:
             raise InvalidParams from err
         except ValueError as err:
@@ -292,8 +292,7 @@ class Server:
         Raises:
             InvalidParams"""
 
-        path = ""
-        proj = (
+        project = (
             None
             if not self.workspace_directory
             else service.jedi_project(self.workspace_directory)
@@ -304,9 +303,10 @@ class Server:
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            return service.get_documentation(
-                source=src, line=line, column=character, path=path, project=proj
+            helps = service.hover.get_documentation(
+                src, line=line, column=character, project=project
             )
+            return service.hover.to_rpc(helps)
         except KeyError as err:
             raise InvalidParams from err
         except ValueError as err:
