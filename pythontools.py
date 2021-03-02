@@ -315,9 +315,15 @@ class PyTools(sublime_plugin.EventListener):
             try:
                 folders = view.window().folders()
                 logger.debug(folders)
-                working_folders = [folder for folder in folders if folder in view.file_name()]
+                working_folders = [
+                    folder for folder in folders if folder in view.file_name()
+                ]
                 logger.debug(working_folders)
-                path = working_folders[0] if working_folders else os.path.dirname(view.file_name)
+                path = (
+                    working_folders[0]
+                    if working_folders
+                    else os.path.dirname(view.file_name())
+                )
                 change_workspace(path)
                 # change_workspace(os.path.dirname(view.file_name()))
                 results = client.fetch_completion(source, line, character)
@@ -387,9 +393,15 @@ class PyTools(sublime_plugin.EventListener):
         try:
             folders = view.window().folders()
             logger.debug(folders)
-            working_folders = [folder for folder in folders if folder in view.file_name()]
+            working_folders = [
+                folder for folder in folders if folder in view.file_name()
+            ]
             logger.debug(working_folders)
-            path = working_folders[0] if working_folders else os.path.dirname(view.file_name)
+            path = (
+                working_folders[0]
+                if working_folders
+                else os.path.dirname(view.file_name())
+            )
             change_workspace(path)
             # change_workspace(os.path.dirname(view.file_name()))
             logger.debug("fetch_documentation")
@@ -602,8 +614,14 @@ class PytoolsChangeWorkspaceCommand(sublime_plugin.TextCommand):
         def change_thread(path):
             try:
                 folders = view.window().folders()
-                working_folders = [folder for folder in folders if folder in view.file_name()]
-                path = working_folders[0] if working_folders else os.path.dirname(view.file_name)
+                working_folders = [
+                    folder for folder in folders if folder in view.file_name()
+                ]
+                path = (
+                    working_folders[0]
+                    if working_folders
+                    else os.path.dirname(view.file_name())
+                )
                 change_workspace(path)
                 # change_workspace(path)
             except ServerOffline:
