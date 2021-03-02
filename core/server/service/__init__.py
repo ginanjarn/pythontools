@@ -3,22 +3,32 @@
 
 from typing import List, Any, Dict, Optional
 from jedi import Project as jedi_project
-from core.server.service import completion, hover
+from core.server.service import completion, hover, document_formatting
 
 from core.server.service.completion import complete
 from core.server.service.hover import get_documentation
-
 from core.server.service.document_formatting import format_document
+
 from core.server.service.analyzer import lint
 
 
-def to_rpc(resuls: List[Any]) -> Optional[Dict[str, Any]]:
-    """result to rpc"""
+def to_rpc(results: Any, **kwargs) -> Optional[Dict[str, Any]]:
+    """result to rpc
 
-    if isinstance(resuls, completion.Completions):
-        return completion.to_rpc(resuls)
-    if isinstance(resuls, hover.Documentations):
-        return hover.to_rpc(resuls)
+    Kwargs:
+        source(str): required for document formatting
+
+    Raises:
+        NameError: required kwargs not initialized
+    """
+
+    if isinstance(results, completion.Completions):
+        return completion.to_rpc(results)
+    if isinstance(results, hover.Documentations):
+        return hover.to_rpc(results)
+    if isinstance(results, document_formatting.Changes):
+        return document_formatting.to_rpc(results, source=kwargs["source"])
+
     return None
 
 
@@ -28,6 +38,8 @@ __all__ = [
     "hover",
     "get_documentation",
     "jedi_project",
+    "document_formatting",
     "format_document",
     "lint",
+    "to_rpc",
 ]

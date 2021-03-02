@@ -321,7 +321,8 @@ class Server:
 
         try:
             src = params["uri"]
-            return service.format_document(src)
+            results = service.format_document(src)
+            return service.to_rpc(results, source=src)
         except KeyError as err:
             raise InvalidParams from err
         except ValueError as err:
