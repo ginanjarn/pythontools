@@ -6,6 +6,7 @@ import json
 import socket
 import sys
 import logging
+from typing import Callable, Text
 
 from core.server import service
 
@@ -152,52 +153,61 @@ class ResponseMessage:
 class Server:
     """Server engine"""
 
-    @staticmethod
-    def listen(
-        callback: "Callable[[str],str]", host: str = "127.0.0.1", port: int = 8088
-    ) -> None:
-        """listen socket request"""
-
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind((host, port))
-            sock.listen()
-            conn, addr = sock.accept()
-            with conn:
-                print("Connected by", addr)
-                recv = []
-                while True:
-                    data = conn.recv(1024)
-                    try:
-                        recv.append(data)
-                        logger.debug(recv)
-                        content = get_rpc_content(b"".join(recv))
-                    except ContentInvalid:
-                        break
-                    except ContentIncomplete:
-                        continue
-                    except ContentOverflow:
-                        break
-                    else:
-                        logger.debug(content)
-                        break
-
-                try:
-                    result = callback(content)
-                except Exception:
-                    logger.exception("internal error")
-                    result = (
-                        '{"jsonrpc":"2.0","id":null,"'
-                        '"error":{"code":1,"message":"invalid request"}}'
-                    )
-                logger.debug(result)
-                conn.sendall(create_rpc_message(result))
-
     def __init__(self) -> None:
         self.service = {}
         self.capability = []
         self.next = True
 
         self.workspace_directory = ""
+
+    @staticmethod
+    def on_listening(sock: socket.socket, *, callback: Callable[[Text], Text]) -> None:
+        """on listening process"""
+
+        conn, addr = sock.accept()
+        print("Connected by", addr)
+        with conn:
+            recv = []
+            while True:
+                data = conn.recv(1024)
+                try:
+                    recv.append(data)
+                    logger.debug(recv)
+                    content = get_rpc_content(b"".join(recv))
+                except ContentInvalid:
+                    break
+                except ContentIncomplete:
+                    continue
+                except ContentOverflow:
+                    break
+                else:
+                    logger.debug(content)
+                    break
+
+            try:
+                result = callback(content)
+            except Exception:
+                logger.exception("internal error")
+                result = (
+                    '{"jsonrpc":"2.0","id":null,"'
+                    '"error":{"code":1,"message":"invalid request"}}'
+                )
+            logger.debug(result)
+            conn.sendall(create_rpc_message(result))
+
+    def listen(self, host: str = "127.0.0.1", port: int = 8088) -> None:
+        """listen socket request"""
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((host, port))
+            sock.listen()
+            while True:
+                # process request
+                self.on_listening(sock, callback=self.process)
+
+                # continue listening
+                if not self.next:
+                    break
 
     def register_service(
         self, method: str, callback: "Callback[Dict[str, Any]Optional[Any]]"
@@ -236,18 +246,6 @@ class Server:
             response.error = "internal error : %s" % err
 
         return response.to_rpc()
-
-    def main_loop(self, once: bool = False) -> None:
-        """server main loop"""
-
-        if once:
-            self.next = False
-
-        # loop until interrupted
-        while True:
-            if not self.next:
-                break
-            Server.listen(self.process)
 
     @staticmethod
     def ping(params: "Dict[str, Any]") -> "Dict[str, Any]":
@@ -370,7 +368,7 @@ def main():
         server.register_service("document.changeWorkspace", server.change_workspace)
         server.register_service("textDocument.get_diagnostic", server.get_diagnostic)
 
-        server.main_loop()
+        server.listen()
 
     except OSError:
         logger.debug("port in use")
