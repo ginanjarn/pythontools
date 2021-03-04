@@ -6,7 +6,8 @@ import json
 import socket
 import sys
 import logging
-from typing import Callable, Text
+from typing import Callable, Text, Dict, Any
+from importlib.util import find_spec
 
 from core.server import service
 
@@ -252,6 +253,21 @@ class Server:
         logger.info("ping\nmessage = %s", params)
         return params
 
+    @staticmethod
+    def isinstalled(package: Text) -> bool:
+        """check if module installed"""
+        return True if find_spec(package) else False
+
+    def initialize(self, params: Dict[Text, Any]) -> Dict[Text, Any]:
+        """initialize"""
+
+        return {
+            "completion": self.isinstalled("jedi"),
+            "hover": self.isinstalled("jedi"),
+            "document_format": self.isinstalled("black"),
+            "diagnostic": self.isinstalled("pylint"),
+        }
+
     def exit(self, params: "Dict[str, Any]") -> None:
         logger.info("exit")
         self.next = False
@@ -361,6 +377,7 @@ def main():
     try:
         server = Server()
         server.register_service("ping", server.ping)
+        server.register_service("initialize", server.initialize)
         server.register_service("exit", server.exit)
         server.register_service("textDocument.completion", server.completion)
         server.register_service("textDocument.hover", server.hover)

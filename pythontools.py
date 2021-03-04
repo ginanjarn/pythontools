@@ -172,32 +172,6 @@ def process_lock(func):
     return wrapper
 
 
-@request_queue
-def check_connection():
-    """check any server connected"""
-
-    try:
-        logger.debug("check connection")
-        results = client.ping()
-        logger.debug(results)
-    except ServerOffline:
-        logger.debug("ServerOffline")
-        SERVER_STATE.online = False
-    except Exception:
-        logger.error("check connection", exc_info=True)
-    else:
-        SERVER_STATE.online = True
-
-
-def plugin_loaded():
-    """on plugin loaded"""
-
-    SERVER_STATE.reset()
-    SETTINGS.initialize()
-    thread = threading.Thread(target=check_connection)
-    thread.start()
-
-
 def valid_source(view, pos=0):
     """python source file"""
 
@@ -233,6 +207,48 @@ def change_workspace(path_directory) -> None:
     logger.debug(results)
     SERVER_STATE.workspace_directory = results.results["workspace_directory"]
     logger.debug(SERVER_STATE.workspace_directory)
+
+
+@request_queue
+def initialize_server():
+    """initialize server"""
+
+    try:
+        results = client.initialize()
+    except ServerOffline:
+        logger.debug("ServerOffline")
+    else:
+        SETTINGS.autocomplete = results.results["completion"]
+        SETTINGS.documentation = results.results["hover"]
+        SETTINGS.format_document = results.results["document_format"]
+        SETTINGS.linter = results.results["diagnostic"]
+
+
+@request_queue
+def check_connection():
+    """check any server connected"""
+
+    try:
+        logger.debug("check connection")
+        results = client.ping()
+        logger.debug(results)
+    except ServerOffline:
+        logger.debug("ServerOffline")
+        SERVER_STATE.online = False
+    except Exception:
+        logger.error("check connection", exc_info=True)
+    else:
+        SERVER_STATE.online = True
+        initialize_server()
+
+
+def plugin_loaded():
+    """on plugin loaded"""
+
+    SERVER_STATE.reset()
+    SETTINGS.initialize()
+    thread = threading.Thread(target=check_connection)
+    thread.start()
 
 
 class Diagnostic:
@@ -664,16 +680,13 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         sublime_settings = sublime.load_settings("Pytools.sublime-settings")
         python_path = sublime_settings.get("interpreter")
         if not python_path:
-            config = sublime.yes_no_cancel_dialog(
+            config = sublime.ok_cancel_dialog(
                 "Python interpreter not configured.\nConfigure now?",
-                no_title="Igore this session",
             )
-            if config == sublime.DIALOG_YES:
+            if config:
                 self.window.run_command("pytools_python_interpreter")
-            elif config == sublime.DIALOG_NO:
-                SETTINGS.disable_all()
             else:
-                pass
+                SETTINGS.disable_all()
             return
 
         thread = threading.Thread(target=self.run_server, args=(python_path,))
@@ -705,6 +718,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             logger.debug("server ready")
             self.window.status_message("Server ready")
             self.window.active_view().run_command("pytools_change_workspace")
+            initialize_server()
 
 
 class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):

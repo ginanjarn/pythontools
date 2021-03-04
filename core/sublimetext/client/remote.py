@@ -289,8 +289,9 @@ def ping(*args: "Any") -> "ResponseMessage":
 
 def initialize(*args: "Any") -> "ResponseMessage":
     """initialize server"""
-    # temprorarily use ping to tests connection
-    return ResponseMessage.from_rpc(ping(*args))
+    message = RequestMessage("initialize", args)
+    response = request(message.to_rpc())
+    return ResponseMessage.from_rpc(response)
 
 
 def shutdown(*args: "Any") -> "ResponseMessage":
