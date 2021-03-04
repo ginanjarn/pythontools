@@ -7,7 +7,7 @@ import socket
 import sys
 import logging
 
-from . import service
+from core.server import service
 
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,13 @@ def content_length(header: bytes) -> int:
 
 
 def get_rpc_content(message: bytes) -> str:
-    """get rpc content"""
+    """get rpc content
+
+    Raises:
+        ContentInvalid
+        ContentIncomplete
+        ContentOverflow
+    """
 
     try:
         header, content = message.split(RPC_SEPARATOR)
@@ -70,24 +76,21 @@ def get_rpc_content(message: bytes) -> str:
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentIncomplete(
-            "Content length: want: %s, expected: %s",
-            len(content),
-            content_length(header),
+            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
         )
     if len(content) > content_length(header):
         logger.debug(
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentOverflow(
-            "Content length: want: %s, expected: %s",
-            len(content),
-            content_length(header),
+            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
         )
     return content.decode("utf-8")
 
 
 def create_rpc_message(message: str) -> bytes:
     """create rpc message"""
+
     content_encoded = message.encode("utf-8")
     header = "Content-Length: %s" % (len(content_encoded))
     return b"%s%s%s" % (header.encode("ascii"), RPC_SEPARATOR, content_encoded)
@@ -104,7 +107,7 @@ class RequestMessage:
     @classmethod
     def from_rpc(cls, message: str) -> "RequestMessage":
         """load RequestMessage from rpc
-        
+
         Result:
             RequestMessage
 
@@ -123,17 +126,17 @@ class ResponseMessage:
         *,
         results: "Dict[str, Any]" = None,
         error: "Dict[str, Any]" = None
-    ):
+    ) -> None:
         self.id_ = id_
         self.results = results
         self.error = error
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "{id_}\n{results}\n{error}\n".format(
             id_=self.id_, results=self.results, error=self.error
         )
 
-    def to_rpc(self):
+    def to_rpc(self) -> str:
         """export to rpc
 
         Results:
@@ -155,10 +158,10 @@ class Server:
     ) -> None:
         """listen socket request"""
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((host, port))
-            s.listen()
-            conn, addr = s.accept()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((host, port))
+            sock.listen()
+            conn, addr = sock.accept()
             with conn:
                 print("Connected by", addr)
                 recv = []
@@ -189,7 +192,7 @@ class Server:
                 logger.debug(result)
                 conn.sendall(create_rpc_message(result))
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.service = {}
         self.capability = []
         self.next = True
@@ -200,13 +203,15 @@ class Server:
         self, method: str, callback: "Callback[Dict[str, Any]Optional[Any]]"
     ) -> None:
         """Register service capability"""
+
         self.service[method] = callback
 
     def process(self, message: str) -> str:
         """process operation
 
         Results:
-            ResponseMessage json string"""
+            ResponseMessage json string
+        """
 
         try:
             parsed = RequestMessage.from_rpc(message)
@@ -232,10 +237,11 @@ class Server:
 
         return response.to_rpc()
 
-    def main_loop(self, once=False):
+    def main_loop(self, once: bool = False) -> None:
         """server main loop"""
 
-        self.next = False if once else True
+        if once:
+            self.next = False
 
         # loop until interrupted
         while True:
@@ -243,7 +249,8 @@ class Server:
                 break
             Server.listen(self.process)
 
-    def ping(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+    @staticmethod
+    def ping(params: "Dict[str, Any]") -> "Dict[str, Any]":
         logger.info("ping\nmessage = %s", params)
         return params
 
@@ -259,8 +266,7 @@ class Server:
             InvalidParams
             """
 
-        path = ""
-        proj = (
+        project = (
             None
             if not self.workspace_directory
             else service.jedi_project(self.workspace_directory)
@@ -271,9 +277,10 @@ class Server:
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            return service.complete(
-                source=src, line=line, column=character, path=path, project=proj
+            completions = service.complete(
+                src, line=line, column=character, project=project
             )
+            return service.to_rpc(completions)
         except KeyError as err:
             raise InvalidParams from err
         except ValueError as err:
@@ -285,8 +292,7 @@ class Server:
         Raises:
             InvalidParams"""
 
-        path = ""
-        proj = (
+        project = (
             None
             if not self.workspace_directory
             else service.jedi_project(self.workspace_directory)
@@ -297,15 +303,17 @@ class Server:
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            return service.get_documentation(
-                source=src, line=line, column=character, path=path, project=proj
+            helps = service.get_documentation(
+                src, line=line, column=character, project=project
             )
+            return service.to_rpc(helps)
         except KeyError as err:
             raise InvalidParams from err
         except ValueError as err:
             raise InvalidParams from err
 
-    def document_format(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+    @staticmethod
+    def document_format(params: "Dict[str, Any]") -> "Dict[str, Any]":
         """document format
 
         Raises:
@@ -313,7 +321,8 @@ class Server:
 
         try:
             src = params["uri"]
-            return service.format_document(src)
+            results = service.format_document(src)
+            return service.to_rpc(results, source=src)
         except KeyError as err:
             raise InvalidParams from err
         except ValueError as err:

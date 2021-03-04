@@ -6,10 +6,10 @@ import sublime_plugin  # pylint: disable=import-error
 import threading
 import logging
 import os
-from .sublimetext import client
-from .sublimetext import document
-from .sublimetext import settings as python_settings
-from .sublimetext import ServerOffline, ServerError, InvalidInput
+from .core.sublimetext import client
+from .core.sublimetext import document
+from .core.sublimetext import settings as python_settings
+from .core.sublimetext import ServerOffline, ServerError, InvalidInput
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
@@ -82,7 +82,8 @@ class Settings:
         self.linter = sublime_settings.get("linter", True)
         return sublime_settings
 
-    def interpreter_change(self):
+    @staticmethod
+    def interpreter_change():
         """on interpreter settings change"""
 
         sublime.active_window().run_command("pytools_shutdownserver")
@@ -209,8 +210,8 @@ def valid_attribute(view, pos):
     result = all(
         [
             view.match_selector(pos, "source.python"),
-            not view.match_selector(pos, "comment"),
-            not view.match_selector(pos, "string"),
+            not view.match_selector(pos, "source.python comment"),
+            not view.match_selector(pos, "source.python meta.string.python string"),
         ]
     )
     return result
@@ -267,16 +268,6 @@ def status_message(message: str):
     sublime.active_window().status_message(message)
 
 
-def build_completion(completions: "Iterable") -> "Iterator[Any, Any]":
-    """build completion"""
-
-    for completion in completions:
-        yield (
-            "%s\t%s" % (completion["label"], completion["type"]),
-            completion["label"],
-        )
-
-
 class PyTools(sublime_plugin.EventListener):
     """Event based command"""
 
@@ -287,6 +278,16 @@ class PyTools(sublime_plugin.EventListener):
         # completion cache
         self.cached_source = ""
         self.cached_completion = None
+
+    @staticmethod
+    def build_completion(completions: "Iterable") -> "Iterator[Any, Any]":
+        """build completion"""
+
+        for completion in completions:
+            yield (
+                "%s\t%s" % (completion["label"], completion["type"]),
+                completion["label"],
+            )
 
     @can_run_server
     @server_valid
@@ -312,7 +313,19 @@ class PyTools(sublime_plugin.EventListener):
         else:
             self.cached_source = source
             try:
-                change_workspace(os.path.dirname(view.file_name()))
+                folders = view.window().folders()
+                logger.debug(folders)
+                working_folders = [
+                    folder for folder in folders if folder in view.file_name()
+                ]
+                logger.debug(working_folders)
+                path = (
+                    working_folders[0]
+                    if working_folders
+                    else os.path.dirname(view.file_name())
+                )
+                change_workspace(path)
+                # change_workspace(os.path.dirname(view.file_name()))
                 results = client.fetch_completion(source, line, character)
             except ServerOffline:
                 logger.debug("ServerOffline")
@@ -324,11 +337,12 @@ class PyTools(sublime_plugin.EventListener):
                 if results.error:
                     status_message(results.error)
                     return None
-    
+
                 self.completion = (
-                    list(build_completion(results.results)),
-                    sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
-                    )
+                    list(self.build_completion(results.results)),
+                    sublime.INHIBIT_WORD_COMPLETIONS
+                    | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
+                )
                 self.cached_completion = self.completion
 
         document.show_completions(view)
@@ -355,6 +369,11 @@ class PyTools(sublime_plugin.EventListener):
         )
         thread.start()
 
+    @staticmethod
+    def decorate(content) -> str:
+        """decorate popup content"""
+        return '<div style="padding: .5em">%s</div>' % content
+
     @can_run_server
     @process_lock
     @server_valid
@@ -371,11 +390,20 @@ class PyTools(sublime_plugin.EventListener):
         source_region = sublime.Region(start, end)
         line, character = view.rowcol(end)  # get rowcol at end selection
 
-        def decorate(content):
-            return '<div style="padding: .5em">%s</div>' % content
-
         try:
-            change_workspace(os.path.dirname(view.file_name()))
+            folders = view.window().folders()
+            logger.debug(folders)
+            working_folders = [
+                folder for folder in folders if folder in view.file_name()
+            ]
+            logger.debug(working_folders)
+            path = (
+                working_folders[0]
+                if working_folders
+                else os.path.dirname(view.file_name())
+            )
+            change_workspace(path)
+            # change_workspace(os.path.dirname(view.file_name()))
             logger.debug("fetch_documentation")
             results = client.fetch_documentation(
                 view.substr(source_region), line, character
@@ -398,7 +426,7 @@ class PyTools(sublime_plugin.EventListener):
 
             document.show_popup(
                 view,
-                decorate(content),
+                self.decorate(content),
                 location,
                 lambda _: document.open_link(view, link),
             )
@@ -440,7 +468,7 @@ class PyTools(sublime_plugin.EventListener):
             if not body:  # empty
                 return
 
-            html_msg = '<div style="padding: 0.5em">{body}</div>'.format(body=body)
+            html_msg = self.decorate(body)
             logger.debug(html_msg)
             document.show_popup(view, html_msg, location=point, callback=None)
 
@@ -585,7 +613,17 @@ class PytoolsChangeWorkspaceCommand(sublime_plugin.TextCommand):
 
         def change_thread(path):
             try:
+                folders = view.window().folders()
+                working_folders = [
+                    folder for folder in folders if folder in view.file_name()
+                ]
+                path = (
+                    working_folders[0]
+                    if working_folders
+                    else os.path.dirname(view.file_name())
+                )
                 change_workspace(path)
+                # change_workspace(path)
             except ServerOffline:
                 pass
             except Exception:
@@ -648,8 +686,9 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
         activate_path = python_settings.find_activate(python_path)
         env_path = python_settings.find_environment(python_path)
-        server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core")
-        server_module = "server.main"
+        server_path = os.path.dirname(os.path.abspath(__file__))
+        # server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core")
+        server_module = "core.server.main"
         activate_path = [path for path in (activate_path, env_path) if path]
         try:
             logger.debug("running server")

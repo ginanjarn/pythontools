@@ -26,6 +26,10 @@ class ContentOverflow(ValueError):
     """Content too large"""
 
 
+class ContentInvalid(ValueError):
+    """Content invalid"""
+
+
 class InvalidResponse(Exception):
     """Invalid response"""
 
@@ -61,7 +65,13 @@ def content_length(header: bytes) -> int:
 
 
 def get_rpc_content(message: bytes) -> str:
-    """get rpc content"""
+    """get rpc content
+
+    Raises:
+        ContentInvalid
+        ContentIncomplete
+        ContentOverflow
+    """
 
     try:
         header, content = message.split(RPC_SEPARATOR)
@@ -74,18 +84,14 @@ def get_rpc_content(message: bytes) -> str:
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentIncomplete(
-            "Content length: want: %s, expected: %s",
-            len(content),
-            content_length(header),
+            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
         )
     if len(content) > content_length(header):
         logger.debug(
             "Length want: %s expected: %s", len(content), content_length(header)
         )
         raise ContentOverflow(
-            "Content length: want: %s, expected: %s",
-            len(content),
-            content_length(header),
+            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
         )
     return content.decode("utf-8")
 
@@ -117,7 +123,12 @@ class RequestMessage:
         )
 
     def to_rpc(self) -> str:
-        """convert to rpc message"""
+        """convert to rpc message
+
+        Raises:
+            TypeError
+        """
+
         message = {"id": self.req_id, "method": self.method, "params": self.params}
         return json.dumps(message)
 
@@ -141,11 +152,12 @@ class ResponseMessage:
         )
 
     @classmethod
-    def from_rpc(cls, message):
+    def from_rpc(cls, message: str) -> "ResponseMessage":
         """load message from rpc
 
         Raises:
             json.JSONDecodeError"""
+
         parsed = json.loads(message)
         return cls(parsed["id"], parsed["results"], parsed["error"])
 
@@ -160,7 +172,7 @@ def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
     """
 
     if not isinstance(message, str):
-        raise InvalidInput
+        raise InvalidInput("required <class 'str'> expected %s" % type(message))
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
@@ -184,12 +196,15 @@ def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
         raise ServerOffline from None
 
 
-def server_subproces(server_path, server_module, activate_path=None) -> None:
+def server_subproces(
+    server_path: str, server_module: str, activate_path: str = None
+) -> None:
     """server subprocess
 
     Raises:
         ServerError
     """
+
     activator = [] if not activate_path else activate_path + ["&&"]
     run_server_cmd = activator + ["python", "-m", server_module]
     logger.debug(run_server_cmd)
@@ -247,7 +262,7 @@ def server_subproces(server_path, server_module, activate_path=None) -> None:
         raise ServerError from err
 
 
-def run_server(server_path, server_module, activate_path=None) -> None:
+def run_server(server_path: str, server_module: str, activate_path: str = None) -> None:
     """running server thread
 
     Raises:
@@ -260,7 +275,7 @@ def run_server(server_path, server_module, activate_path=None) -> None:
     thread.start()
 
 
-def ping(*args) -> "ResponseMessage":
+def ping(*args: "Any") -> "ResponseMessage":
     """ping test
 
     Raises:
@@ -272,15 +287,15 @@ def ping(*args) -> "ResponseMessage":
     return ResponseMessage.from_rpc(response)
 
 
-def initialize(*args):
+def initialize(*args: "Any") -> "ResponseMessage":
     """initialize server"""
     # temprorarily use ping to tests connection
     return ResponseMessage.from_rpc(ping(*args))
 
 
-def shutdown(*args) -> "ResponseMessage":
+def shutdown(*args: "Any") -> "ResponseMessage":
     """shutdown server
-    
+
     Raises:
         InvalidInput
         InvalidResponse
@@ -289,8 +304,7 @@ def shutdown(*args) -> "ResponseMessage":
 
     message = RequestMessage("exit", args)
     response = request(message.to_rpc())
-    response_message = ResponseMessage.from_rpc(response)
-    return response_message
+    return ResponseMessage.from_rpc(response)
 
 
 def change_workspace(workspace_dir: str) -> "ResponseMessage":
@@ -305,5 +319,4 @@ def change_workspace(workspace_dir: str) -> "ResponseMessage":
     message = RequestMessage("document.changeWorkspace")
     message.params = {"uri": workspace_dir}
     response = request(message.to_rpc())
-    response_message = ResponseMessage.from_rpc(response)
-    return response_message
+    return ResponseMessage.from_rpc(response)

@@ -13,7 +13,7 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-def show_completions(view):
+def show_completions(view: "sublime.View") -> None:
     """Opens (forced) the sublime autocomplete window"""
 
     view.run_command("hide_auto_complete")
@@ -27,7 +27,9 @@ def show_completions(view):
     )
 
 
-def show_popup(view, content, location, callback):
+def show_popup(
+    view: "sublime.View", content: str, location: int, callback: "Callable[[str],None]"
+) -> None:
     """Open popup"""
 
     view.show_popup(
@@ -39,7 +41,7 @@ def show_popup(view, content, location, callback):
     )
 
 
-def open_link(view, link):
+def open_link(view: "sublime.View", link: str) -> None:
     """open link"""
 
     if not link:
