@@ -3,13 +3,13 @@
 
 from typing import List, Any, Dict, Optional
 from jedi import Project as jedi_project
-from core.server.service import completion, hover, document_formatting
+from . import completion, hover, document_formatting
 
-from core.server.service.completion import complete
-from core.server.service.hover import get_documentation
-from core.server.service.document_formatting import format_document
+from .completion import complete
+from .hover import get_documentation
+from .document_formatting import format_document
 
-from core.server.service.analyzer import lint
+from .analyzer import lint
 
 
 def to_rpc(results: Any, **kwargs) -> Optional[Dict[str, Any]]:

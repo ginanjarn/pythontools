@@ -9,7 +9,7 @@ import logging
 from typing import Callable, Text, Dict, Any
 from importlib.util import find_spec
 
-from core.server import service
+from . import service
 
 
 logger = logging.getLogger(__name__)
@@ -169,6 +169,7 @@ class Server:
         print("Connected by", addr)
         with conn:
             recv = []
+            content = ""
             while True:
                 data = conn.recv(1024)
                 try:
