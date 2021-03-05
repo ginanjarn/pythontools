@@ -3,6 +3,7 @@
 from typing import Text, Tuple, List, Iterator, Any, Union, Dict, Optional
 import os
 import re
+import difflib
 
 from rope.base import project, libutils
 from rope.base.change import ChangeSet, MoveResource, ChangeContents
@@ -33,72 +34,109 @@ def get_removed(line: str) -> Tuple[int, int]:
     return start, end
 
 
-def change_gen(
-    changes_diff: str, old_source: str
-) -> Iterator[Union[Dict[str, Any], str]]:
-    olds = old_source.split("\n")
-    for line in changes_diff.split("\n"):
-        if line.startswith("@@"):
-            start_line, end_line = get_removed(line)
-            logger.debug(line)
-            change = {
-                "range": {
-                    "start": {"line": start_line, "character": 0},
-                    "end": {"line": end_line, "character": len(olds[end_line - 1])},
+class TextEdit:
+    def __init__(self, change_diff, old_source):
+        self.change_diff = change_diff
+        self.old_source = old_source
+
+    def change_gen(self,) -> Iterator[Union[Dict[str, Any], str]]:
+        olds = self.old_source.split("\n")
+        logger.debug(olds)
+        for line in self.change_diff.split("\n"):
+            if line.startswith("@@"):
+                start_line, end_line = get_removed(line)
+                logger.debug(line)
+                change = {
+                    "range": {
+                        "start": {"line": start_line, "character": 0},
+                        "end": {"line": end_line, "character": len(olds[end_line - 1])},
+                    }
                 }
-            }
-            logger.debug(change)
-            yield change
-        elif line.startswith("-"):
-            continue
-        elif line.startswith("+"):
-            logger.debug(line)
-            yield line[1:]
-        elif line.startswith(" "):
-            logger.debug(line)
-            yield line[1:]
-        else:
-            continue
-
-
-def changes_rpc(diff_changes: str, *, source: str):
-    """convert changes to rpc"""
-
-    changes = []
-    index = -1
-    for change in change_gen(diff_changes, source):
-        if isinstance(change, dict):
-            changes.append(change)
-            index += 1
-        else:
-            if not changes:  # for list
+                logger.debug(change)
+                yield change
+            elif line.startswith("-"):
                 continue
-            new_text = changes[index].get("newText")
-            if new_text is None:
-                changes[index]["newText"] = change
+            elif line.startswith("+"):
+                logger.debug(line)
+                yield line[1:]
+            elif line.startswith(" "):
+                logger.debug(line)
+                yield line[1:]
             else:
-                changes[index]["newText"] = "\n".join([new_text, change])
+                continue
 
-    logger.debug(changes)
-    return changes
+    def to_rpc(self):
+        """convert changes to rpc"""
+
+        changes = []
+        index = -1
+        for change in self.change_gen():
+            if isinstance(change, dict):
+                changes.append(change)
+                index += 1
+            else:
+                if not changes:  # for list
+                    continue
+                new_text = changes[index].get("newText")
+                if new_text is None:
+                    changes[index]["newText"] = change
+                else:
+                    changes[index]["newText"] = "\n".join([new_text, change])
+
+        logger.debug(changes)
+        return changes
+
+
+class DocumentChanges:
+    def __init__(self, file_name, *, old, new):
+        self.file_name = file_name
+        self.old_source: str = old
+        self.new_source: str = new
+
+    def to_rpc(self):
+        diff_change = "".join(
+            difflib.unified_diff(
+                self.old_source.splitlines(keepends=True),
+                self.new_source.splitlines(keepends=True),
+            )
+        )
+        logger.debug("diff = \n%s", diff_change)
+        changes = TextEdit(change_diff=diff_change, old_source=self.old_source).to_rpc()
+        return {
+            "type": "change",
+            "file_name": self.file_name,
+            "changes": changes,
+        }
+
+
+class DocumentRename:
+    def __init__(self, old_name, new_name):
+        self.old_name = old_name
+        self.new_name = new_name
+
+    def to_rpc(self):
+        return {
+            "type": "rename",
+            "changes": {"old_name": self.old_name, "new_name": self.new_name,},
+        }
 
 
 def to_rpc(change_set: ChangeSet):
     for change in change_set.changes:
         if isinstance(change, MoveResource):
             change: MoveResource = change
-            yield {
-                "type": "rename",
-                "changes": {
-                    "old_name": change.resource.path,
-                    "new_name": change.new_resource.path,
-                },
-            }
-        if isinstance(change, ChangeContents):
+            yield DocumentRename(
+                old_name=change.resource.path, new_name=change.new_resource.path
+            ).to_rpc()
+
+        elif isinstance(change, ChangeContents):
             change: ChangeContents = change
             diff_change = change.get_description()
+            file_name = change.resource.path
             old_src = change.resource.read()
-            yield {"type": "change", "changes": changes_rpc(diff_change, source=old_src)}
+            yield DocumentChanges(
+                file_name, old=old_src, new=change.new_contents
+            ).to_rpc()
 
 
 def rename_attribute(
