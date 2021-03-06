@@ -237,8 +237,9 @@ def change_workspace(path_directory) -> None:
 
     results = client.change_workspace(path_directory)
     logger.debug(results)
-    SERVER_STATE.workspace_directory = results.results["workspace_directory"]
-    logger.debug(SERVER_STATE.workspace_directory)
+    if results.results:
+        SERVER_STATE.workspace_directory = results.results["workspace_directory"]
+        logger.debug(SERVER_STATE.workspace_directory)
 
 
 class Diagnostic:
