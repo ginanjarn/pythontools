@@ -58,18 +58,22 @@ class Settings:
         self.documentation = True
         self.format_document = True
         self.linter = True
+        # wokspace abosolute import
+        self.absolute_import = True
 
     def __repr__(self):
         return (
             "autocomplete :{autocomplete}, "
-            "documentation: {documentation} "
-            "format_document: {format_document} "
-            "linter: {linter}"
+            "documentation: {documentation}, "
+            "format_document: {format_document}, "
+            "linter: {linter}, "
+            "absolute_import: {absolute_import}, "
             "".format(
                 autocomplete=self.autocomplete,
                 documentation=self.documentation,
                 format_document=self.format_document,
                 linter=self.linter,
+                absolute_import=self.absolute_import,
             )
         )
 
@@ -80,6 +84,7 @@ class Settings:
         self.documentation = sublime_settings.get("documentation", True)
         self.format_document = sublime_settings.get("format_document", True)
         self.linter = sublime_settings.get("linter", True)
+        self.absolute_import = sublime_settings.get("absolute_import", True)
         return sublime_settings
 
     @staticmethod
@@ -100,6 +105,7 @@ class Settings:
         sublime_settings.add_on_change("documentation", self.load_settings)
         sublime_settings.add_on_change("format_document", self.load_settings)
         sublime_settings.add_on_change("linter", self.load_settings)
+        sublime_settings.add_on_change("absolute_import", self.load_settings)
 
     def disable_all(self) -> None:
         """disable all services"""
@@ -244,7 +250,7 @@ class Diagnostic:
         self.message = message
 
     def __repr__(self):
-        return ("severity: {severity}, region: {region}, " "message: {message}").format(
+        return ("severity: {severity}, region: {region}, message: {message}").format(
             severity=self.severity, region=self.region, message=self.message
         )
 
@@ -313,19 +319,17 @@ class PyTools(sublime_plugin.EventListener):
         else:
             self.cached_source = source
             try:
-                folders = view.window().folders()
-                logger.debug(folders)
-                working_folders = [
-                    folder for folder in folders if folder in view.file_name()
-                ]
-                logger.debug(working_folders)
-                path = (
-                    working_folders[0]
-                    if working_folders
-                    else os.path.dirname(view.file_name())
-                )
+                path = os.path.dirname(view.file_name())
+
+                if SETTINGS.absolute_import:
+                    working_folders = [
+                        folder
+                        for folder in view.window().folders()
+                        if folder in view.file_name()
+                    ]
+                    logger.debug(working_folders)
+                    path = working_folders[0] if working_folders else path
                 change_workspace(path)
-                # change_workspace(os.path.dirname(view.file_name()))
                 results = client.fetch_completion(source, line, character)
             except ServerOffline:
                 logger.debug("ServerOffline")
@@ -391,19 +395,17 @@ class PyTools(sublime_plugin.EventListener):
         line, character = view.rowcol(end)  # get rowcol at end selection
 
         try:
-            folders = view.window().folders()
-            logger.debug(folders)
-            working_folders = [
-                folder for folder in folders if folder in view.file_name()
-            ]
-            logger.debug(working_folders)
-            path = (
-                working_folders[0]
-                if working_folders
-                else os.path.dirname(view.file_name())
-            )
+            path = os.path.dirname(view.file_name())
+
+            if SETTINGS.absolute_import:
+                working_folders = [
+                    folder
+                    for folder in view.window().folders()
+                    if folder in view.file_name()
+                ]
+                logger.debug(working_folders)
+                path = working_folders[0] if working_folders else path
             change_workspace(path)
-            # change_workspace(os.path.dirname(view.file_name()))
             logger.debug("fetch_documentation")
             results = client.fetch_documentation(
                 view.substr(source_region), line, character
@@ -608,29 +610,27 @@ class PytoolsChangeWorkspaceCommand(sublime_plugin.TextCommand):
         if not all([valid_source(view), file_name]):
             return
 
-        path = os.path.dirname(file_name)
-        logger.debug("init change_workspace")
-
-        def change_thread(path):
-            try:
-                folders = view.window().folders()
-                working_folders = [
-                    folder for folder in folders if folder in view.file_name()
-                ]
-                path = (
-                    working_folders[0]
-                    if working_folders
-                    else os.path.dirname(view.file_name())
-                )
-                change_workspace(path)
-                # change_workspace(path)
-            except ServerOffline:
-                pass
-            except Exception:
-                logger.error("change workspace", exc_info=True)
-
-        thread = threading.Thread(target=change_thread, args=(path,))
+        thread = threading.Thread(target=self.change_thread, args=(view,))
         thread.start()
+
+    @staticmethod
+    def change_thread(view: sublime.View):
+        try:
+            path = os.path.dirname(view.file_name())
+
+            if SETTINGS.absolute_import:
+                working_folders = [
+                    folder
+                    for folder in view.window().folders()
+                    if folder in view.file_name()
+                ]
+                logger.debug(working_folders)
+                path = working_folders[0] if working_folders else path
+            change_workspace(path)
+        except ServerOffline:
+            pass
+        except Exception:
+            logger.error("change workspace", exc_info=True)
 
 
 class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
