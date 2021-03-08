@@ -3,11 +3,12 @@
 
 from typing import List, Any, Dict, Optional
 from jedi import Project as jedi_project
-from . import completion, hover, document_formatting
+from . import completion, hover, document_formatting, rename
 
 from .completion import complete
 from .hover import get_documentation
 from .document_formatting import format_document
+from .rename import rename_attribute, ChangeSet
 
 from .analyzer import lint
 
@@ -28,6 +29,8 @@ def to_rpc(results: Any, **kwargs) -> Optional[Dict[str, Any]]:
         return hover.to_rpc(results)
     if isinstance(results, document_formatting.Changes):
         return document_formatting.to_rpc(results, source=kwargs["source"])
+    if isinstance(results, ChangeSet):
+        return rename.to_rpc(results)
 
     return None
 
@@ -41,5 +44,6 @@ __all__ = [
     "document_formatting",
     "format_document",
     "lint",
+    "rename",
     "to_rpc",
 ]

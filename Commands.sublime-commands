@@ -2,6 +2,7 @@
 	{ "caption": "PyTools: Python Interpreter", "command": "pytools_python_interpreter" },
 
 	{ "caption": "PyTools: Format document", "command": "pytools_format" },
+	{ "caption": "PyTools: Rename", "command": "pytools_rename" },
 	{ "caption": "PyTools: Lint document", "command": "pytools_diagnose" },
 	{ "caption": "PyTools: Clean lint message", "command": "pytools_clean_diagnose" },
 

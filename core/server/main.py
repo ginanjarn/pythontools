@@ -3,6 +3,7 @@
 
 from re import findall
 import json
+import os
 import socket
 import sys
 import logging
@@ -373,6 +374,31 @@ class Server:
         except ValueError as err:
             raise InvalidParams from err
 
+    def rename(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
+        """rename
+
+        Raises:
+            InvalidParams"""
+
+        try:
+            path = params["uri"]
+            project_path = os.path.dirname(path)  # project limited to current directory
+            offset = params.get("location", None)
+            new_name = params["new_name"]
+
+            changes = service.rename_attribute(
+                project_path=project_path,
+                resource_path=path,
+                offset=offset if offset and offset > 0 else None,
+                new_name=new_name,
+            )
+
+            return service.to_rpc(changes)
+        except KeyError as err:
+            raise InvalidParams from err
+        except ValueError as err:
+            raise InvalidParams from err
+
 
 def main():
     try:
@@ -384,6 +410,7 @@ def main():
         server.register_service("textDocument.hover", server.hover)
         server.register_service("textDocument.formatting", server.document_format)
         server.register_service("document.changeWorkspace", server.change_workspace)
+        server.register_service("document.rename", server.rename)
         server.register_service("textDocument.get_diagnostic", server.get_diagnostic)
 
         server.listen()
