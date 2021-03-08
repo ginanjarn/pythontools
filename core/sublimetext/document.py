@@ -117,3 +117,6 @@ def apply_changes(view: sublime.View, edit: sublime.Edit, changes):
         view.erase(edit, region)
         view.insert(edit, region.a, value.new_text)
         pos_changes += value.pos_changes
+
+def show_input_panel(window: sublime.Window, caption: str, *, initial_text: str="", on_done: "Callback[[str], None]" = None):
+    window.show_input_panel(caption=caption, initial_text=initial_text, on_done=on_done, on_change=None, on_cancel=None)
