@@ -61,7 +61,7 @@ class Update:
 
     __slots__ = ["_pos_changes", "region", "new_text"]
 
-    def __init__(self, update_region: sublime.Region, value: str):
+    def __init__(self, update_region: sublime.Region, value: str) -> None:
         self._pos_changes = len(value) - update_region.size()
         self.region = update_region
         self.new_text = value
@@ -80,7 +80,8 @@ class Update:
         )
 
     @classmethod
-    def from_rpc(cls, view, update):
+    def from_rpc(cls, view: sublime.View, update: "Dict[str, Any]") -> "Update":
+        """load from rpc"""
         # type: Callable[sublime.View, Dict[str, Any]] -> "Update"
 
         start_line = update["range"]["start"]["line"]
@@ -96,7 +97,17 @@ class Update:
         return cls(region, new_text)
 
 
-def apply_changes(view: sublime.View, edit: sublime.Edit, changes):
+def apply_changes(
+    view: sublime.View, edit: sublime.Edit, changes: "List[str, Any]"
+) -> None:
+    """apply changes to active view
+
+    Argumens
+        changes: str
+            rpc message
+            Ex: [{"range": {"start": {"line":0, "character":0},
+                "end": {"line": 0, "character": 0}}, "newText": ""}]
+    """
     # type : Callable[sublime.View, sublime.Edit, Any] -> None
 
     if not changes:
@@ -118,5 +129,18 @@ def apply_changes(view: sublime.View, edit: sublime.Edit, changes):
         view.insert(edit, region.a, value.new_text)
         pos_changes += value.pos_changes
 
-def show_input_panel(window: sublime.Window, caption: str, *, initial_text: str="", on_done: "Callback[[str], None]" = None):
-    window.show_input_panel(caption=caption, initial_text=initial_text, on_done=on_done, on_change=None, on_cancel=None)
+
+def show_input_panel(
+    window: sublime.Window,
+    caption: str,
+    *,
+    initial_text: str = "",
+    on_done: "Callback[[str], None]" = None
+) -> None:
+    window.show_input_panel(
+        caption=caption,
+        initial_text=initial_text,
+        on_done=on_done,
+        on_change=None,
+        on_cancel=None,
+    )
