@@ -246,6 +246,7 @@ class Server:
         except InvalidMethod as err:
             response.error = "method not found : %s" % err
         except Exception as err:
+            logger.debug("internal error", exc_info=True)
             response.error = "internal error : %s" % err
 
         return response.to_rpc()
