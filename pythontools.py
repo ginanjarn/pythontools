@@ -813,7 +813,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         env_path = python_settings.find_environment(python_path)
         server_path = os.path.dirname(os.path.abspath(__file__))
         # server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core")
-        server_module = "core.server.main"
+        server_module = "core.server"
         activate_path = [path for path in (activate_path, env_path) if path]
         try:
             logger.debug("running server")

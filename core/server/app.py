@@ -246,6 +246,7 @@ class Server:
         except InvalidMethod as err:
             response.error = "method not found : %s" % err
         except Exception as err:
+            logger.debug("internal error", exc_info=True)
             response.error = "internal error : %s" % err
 
         return response.to_rpc()
@@ -268,6 +269,7 @@ class Server:
             "hover": self.isinstalled("jedi"),
             "document_format": self.isinstalled("black"),
             "diagnostic": self.isinstalled("pylint"),
+            "rename": self.isinstalled("rope"),
         }
 
     def exit(self, params: "Dict[str, Any]") -> None:
@@ -401,6 +403,8 @@ class Server:
 
 
 def main():
+    """main app"""
+
     try:
         server = Server()
         server.register_service("ping", server.ping)
@@ -421,7 +425,3 @@ def main():
     except Exception:
         logger.fatal("unexpected error", exc_info=True)
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

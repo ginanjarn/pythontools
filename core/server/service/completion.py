@@ -1,10 +1,15 @@
 """Completion module"""
 
 
-from jedi import Script, Project  # type: ignore
-from jedi.api.classes import Completion  # type: ignore
 from typing import Dict, Any, List, Iterator
 import logging
+
+try:
+    from jedi import Script, Project  # type: ignore
+    from jedi.api.classes import Completion  # type: ignore
+except ImportError:
+    print("module 'jedi' not installed, code completion may not available")
+    pass
 
 logger = logging.getLogger("formatting")
 # logger.setLevel(logging.DEBUG)

@@ -1,16 +1,19 @@
 """document rename module"""
 
+
 from typing import Text, Tuple, List, Iterator, Any, Union, Dict, Optional
 import os
 import re
 import difflib
-
-from rope.base import project, libutils
-from rope.base.change import ChangeSet, MoveResource, ChangeContents
-from rope.refactor import rename
-from rope.refactor.rename import Rename
-from contextlib import contextmanager
 import logging
+
+try:
+    from rope.base import project, libutils
+    from rope.base.change import ChangeSet, MoveResource, ChangeContents
+    from rope.refactor.rename import Rename
+except ImportError:
+    print("module 'rope' not installed, code rename may not available")
+    pass
 
 logger = logging.getLogger("rename")
 # logger.setLevel(logging.DEBUG)
@@ -18,6 +21,9 @@ sh = logging.StreamHandler()
 sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
 sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
+
+class RenameChanges(ChangeSet):
+    """rename changes object"""
 
 
 def get_removed(line: str) -> Tuple[int, int]:
@@ -172,7 +178,7 @@ def to_rpc(change_set: ChangeSet) -> List[Any]:
 
 def rename_attribute(
     project_path: str, resource_path: str, offset: Optional[int], new_name: str
-):
+) -> RenameChanges:
     """
 
     Raises:
@@ -185,4 +191,4 @@ def rename_attribute(
     changes = rename_task.get_changes(new_name)
 
     project_manager.close()
-    return changes
+    return RenameChanges(changes)
