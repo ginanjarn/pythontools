@@ -269,6 +269,7 @@ class Server:
             "hover": self.isinstalled("jedi"),
             "document_format": self.isinstalled("black"),
             "diagnostic": self.isinstalled("pylint"),
+            "rename": self.isinstalled("rope"),
         }
 
     def exit(self, params: "Dict[str, Any]") -> None:
