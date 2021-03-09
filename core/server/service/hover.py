@@ -2,10 +2,15 @@
 
 
 from html import escape
-from jedi import Script, Project
-from jedi.api.classes import BaseName
 from typing import List, Dict, Any, Optional
 import logging
+
+try:
+    from jedi import Script, Project
+    from jedi.api.classes import BaseName
+except ImportError:
+    print("module 'jedi' not installed, code docstring may not available")
+    pass
 
 logger = logging.getLogger("formatting")
 # logger.setLevel(logging.DEBUG)

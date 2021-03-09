@@ -1,16 +1,19 @@
 """document rename module"""
 
+
 from typing import Text, Tuple, List, Iterator, Any, Union, Dict, Optional
 import os
 import re
 import difflib
-
-from rope.base import project, libutils
-from rope.base.change import ChangeSet, MoveResource, ChangeContents
-from rope.refactor import rename
-from rope.refactor.rename import Rename
-from contextlib import contextmanager
 import logging
+
+try:
+    from rope.base import project, libutils
+    from rope.base.change import ChangeSet, MoveResource, ChangeContents
+    from rope.refactor.rename import Rename
+except ImportError:
+    print("module 'rope' not installed, code rename may not available")
+    pass
 
 logger = logging.getLogger("rename")
 # logger.setLevel(logging.DEBUG)

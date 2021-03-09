@@ -5,8 +5,13 @@ import subprocess
 import os
 import re
 import difflib
-import black
 import logging
+
+try:
+    import black
+except ImportError:
+    print("module 'black' not installed, code formatting may not available")
+    pass
 
 logger = logging.getLogger("formatting")
 # logger.setLevel(logging.DEBUG)
