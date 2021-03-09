@@ -4,6 +4,8 @@ from typing import Text, Tuple, List, Iterator, Any, Union, Dict
 import subprocess
 import os
 import re
+import difflib
+import black
 import logging
 
 logger = logging.getLogger("formatting")
@@ -14,52 +16,8 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-class Changes(Text):
+class FormattingChanges(Text):
     """source changes"""
-
-
-def format_with_black(source: str) -> str:
-    """format document with black
-
-    Result:
-        diff changes
-    """
-
-    black_cmd = ["python", "-m", "black", "--diff", "-"]
-    env = os.environ.copy()
-
-    if os.name == "nt":
-        # linux subprocess module does not have STARTUPINFO
-        # so only use it if on Windows
-        si = subprocess.STARTUPINFO()
-        si.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
-        server_proc = subprocess.Popen(
-            black_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=True,
-            env=env,
-            startupinfo=si,
-        )
-    else:
-        server_proc = subprocess.Popen(
-            black_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=True,
-            env=env,
-        )
-
-    sout, serr = server_proc.communicate(source.encode())
-    if server_proc.returncode == 123:
-        raise ValueError("\n".join(serr.decode().splitlines()))
-    elif server_proc.returncode == 1:
-        raise ModuleNotFoundError("module not found : black")
-
-    # normalize end lines to "\n""
-    return "\n".join(sout.decode().splitlines())
 
 
 def get_removed(line: str) -> Tuple[int, int]:
@@ -76,58 +34,94 @@ def get_removed(line: str) -> Tuple[int, int]:
     return start, end
 
 
-def change_gen(
-    changes_diff: str, old_source: str
-) -> Iterator[Union[Dict[str, Any], str]]:
-    olds = old_source.split("\n")
-    for line in changes_diff.split("\n"):
-        if line.startswith("@@"):
-            start_line, end_line = get_removed(line)
-            logger.debug(line)
-            change = {
+class TextEdit:
+    """TextEdit object"""
+
+    def __init__(self, old: str, new: str) -> None:
+        self.old_sources = old.split("\n")
+        self.new_sources = new.split("\n")
+
+        self.blocks = []
+        self.block_index = -1
+
+        self.build_diff()
+
+    def new_block(self, start_line: int, end_line: int) -> None:
+        """create new change block"""
+
+        logger.info("new_block from line %s to %s", start_line, end_line)
+        start_character = 0
+        end_character = len(self.old_sources[end_line - 1])
+
+        self.block_index += 1
+        self.blocks.append(
+            {
                 "range": {
-                    "start": {"line": start_line, "character": 0},
-                    "end": {"line": end_line, "character": len(olds[end_line - 1])},
-                }
+                    "start": {"line": start_line, "character": start_character},
+                    "end": {"line": end_line, "character": end_character},
+                },
+                "newText": [],
             }
-            logger.debug(change)
-            yield change
-        elif line.startswith("-"):
-            continue
-        elif line.startswith("+"):
-            logger.debug(line)
-            yield line[1:]
-        elif line.startswith(" "):
-            logger.debug(line)
-            yield line[1:]
-        else:
-            continue
+        )
+        logger.debug("new_block : %s", self.blocks[self.block_index])
 
+    def add_to_block(self, new_text: str) -> None:
+        """add line to change block"""
 
-def to_rpc(diff_changes: str, *, source: str):
-    """convert changes to rpc"""
+        logger.debug("add_to_block: %s", new_text)
 
-    changes = []
-    index = -1
-    for change in change_gen(diff_changes, source):
-        if isinstance(change, dict):
-            changes.append(change)
-            index += 1
-        else:
-            if not changes:  # for list
-                continue
-            new_text = changes[index].get("newText")
-            if new_text is None:
-                changes[index]["newText"] = change
+        if self.block_index < 0:
+            raise ValueError("block_index not initialized")
+
+        self.blocks[self.block_index]["newText"].append(new_text)
+
+    def build_diff(self) -> None:
+        """build changes diff"""
+
+        logger.info("build_diff")
+        for line in difflib.unified_diff(self.old_sources, self.new_sources):
+            if line.startswith("@@"):
+                start_line, end_line = get_removed(line)
+                self.new_block(start_line, end_line)
+
+            elif any(
+                [line.startswith("-"), line.startswith("---"), line.startswith("+++")]
+            ):
+                continue  # pass on removed line
+
+            elif line.startswith("+"):
+                self.add_to_block(line[1:])  # for added line
+
             else:
-                changes[index]["newText"] = "\n".join([new_text, change])
+                self.add_to_block(line[1:])  # for unmarked line
 
-    logger.debug(changes)
-    return changes
+        for block in self.blocks:
+            block["newText"] = "\n".join(block["newText"])  # list to string
+
+    def to_rpc(self) -> List[Any]:
+        """convert to rpc"""
+
+        return self.blocks
 
 
-def format_document(source: str) -> Changes:
+def to_rpc(results: str, *, source: str) -> Dict[str, Any]:
+    return TextEdit(old=source, new=results).to_rpc()
+
+
+def format_with_black(source: str) -> FormattingChanges:
+    mode = black.FileMode(
+        target_versions=set(),
+        is_pyi=False,
+        line_length=black.DEFAULT_LINE_LENGTH,
+        string_normalization=True,
+    )
+    formatted = black.format_file_contents(source, fast=False, mode=mode)
+    return FormattingChanges(formatted)
+
+
+def format_document(source: str) -> FormattingChanges:
     """format document"""
+
     doc_changes = format_with_black(source)
     logger.debug(doc_changes)
-    return Changes(doc_changes)
+    return FormattingChanges(doc_changes)

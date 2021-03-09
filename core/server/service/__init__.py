@@ -27,7 +27,7 @@ def to_rpc(results: Any, **kwargs) -> Optional[Dict[str, Any]]:
         return completion.to_rpc(results)
     if isinstance(results, hover.Documentations):
         return hover.to_rpc(results)
-    if isinstance(results, document_formatting.Changes):
+    if isinstance(results, document_formatting.FormattingChanges):
         return document_formatting.to_rpc(results, source=kwargs["source"])
     if isinstance(results, ChangeSet):
         return rename.to_rpc(results)
