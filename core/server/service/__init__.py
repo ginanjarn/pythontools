@@ -5,10 +5,10 @@ from typing import List, Any, Dict, Optional
 from jedi import Project as jedi_project
 from . import completion, hover, document_formatting, rename
 
-from .completion import complete
-from .hover import get_documentation
-from .document_formatting import format_document
-from .rename import rename_attribute, ChangeSet
+from .completion import complete, Completions
+from .hover import get_documentation, Documentations
+from .document_formatting import format_document, FormattingChanges
+from .rename import rename_attribute, RenameChanges
 
 from .analyzer import lint
 
@@ -23,13 +23,13 @@ def to_rpc(results: Any, **kwargs) -> Optional[Dict[str, Any]]:
         NameError: required kwargs not initialized
     """
 
-    if isinstance(results, completion.Completions):
+    if isinstance(results, Completions):
         return completion.to_rpc(results)
-    if isinstance(results, hover.Documentations):
+    if isinstance(results, Documentations):
         return hover.to_rpc(results)
-    if isinstance(results, document_formatting.FormattingChanges):
+    if isinstance(results, FormattingChanges):
         return document_formatting.to_rpc(results, source=kwargs["source"])
-    if isinstance(results, ChangeSet):
+    if isinstance(results, RenameChanges):
         return rename.to_rpc(results)
 
     return None

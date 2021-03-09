@@ -1,8 +1,7 @@
 """document formatting module"""
 
-from typing import Text, Tuple, List, Iterator, Any, Union, Dict
-import subprocess
-import os
+
+from typing import Tuple, List, Any, Dict
 import re
 import difflib
 import logging
@@ -21,7 +20,7 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-class FormattingChanges(Text):
+class FormattingChanges(str):
     """source changes"""
 
 

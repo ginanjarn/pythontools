@@ -22,6 +22,9 @@ sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(mess
 sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
+class RenameChanges(ChangeSet):
+    """rename changes object"""
+
 
 def get_removed(line: str) -> Tuple[int, int]:
     """get diff removed line"""
@@ -175,7 +178,7 @@ def to_rpc(change_set: ChangeSet) -> List[Any]:
 
 def rename_attribute(
     project_path: str, resource_path: str, offset: Optional[int], new_name: str
-):
+) -> RenameChanges:
     """
 
     Raises:
@@ -188,4 +191,4 @@ def rename_attribute(
     changes = rename_task.get_changes(new_name)
 
     project_manager.close()
-    return changes
+    return RenameChanges(changes)
