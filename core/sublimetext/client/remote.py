@@ -153,13 +153,13 @@ class ResponseMessage:
 
     @classmethod
     def from_rpc(cls, message: str) -> "ResponseMessage":
-        """load message from rpc
+        """load message from rpc"""
 
-        Raises:
-            json.JSONDecodeError"""
-
-        parsed = json.loads(message)
-        return cls(parsed["id"], parsed["results"], parsed["error"])
+        try:
+            parsed = json.loads(message)
+            return cls(parsed["id"], parsed["results"], parsed["error"])
+        except ValueError as err:
+            return cls("-1", error="invalid response: %s" % str(err))
 
 
 def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
