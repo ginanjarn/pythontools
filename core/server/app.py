@@ -402,6 +402,8 @@ class Server:
 
 
 def main():
+    """main app"""
+
     try:
         server = Server()
         server.register_service("ping", server.ping)
@@ -422,7 +424,3 @@ def main():
     except Exception:
         logger.fatal("unexpected error", exc_info=True)
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
