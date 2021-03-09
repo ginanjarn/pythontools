@@ -115,7 +115,10 @@ def format_with_black(source: str) -> FormattingChanges:
         line_length=black.DEFAULT_LINE_LENGTH,
         string_normalization=True,
     )
-    formatted = black.format_file_contents(source, fast=False, mode=mode)
+    try:
+        formatted = black.format_file_contents(source, fast=False, mode=mode)
+    except black.NothingChanged:
+        return source
     return FormattingChanges(formatted)
 
 
