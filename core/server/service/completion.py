@@ -4,12 +4,6 @@
 from typing import Dict, Any, List, Iterator
 import logging
 
-try:
-    from jedi import Script, Project  # type: ignore
-    from jedi.api.classes import Completion  # type: ignore
-except ImportError:
-    print("module 'jedi' not installed, code completion may not available")
-    pass
 
 logger = logging.getLogger("formatting")
 # logger.setLevel(logging.DEBUG)
@@ -19,32 +13,37 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-class Completions(list):
-    """completion list"""
+try:
+    from jedi import Script, Project  # type: ignore
+    from jedi.api.classes import Completion  # type: ignore
+
+    class Completions(list):
+        """completion list"""
+
+    def build_rpc(completions: List[Completion]) -> Iterator[Dict[str, Any]]:
+        """build rpc content"""
+
+        for completion in completions:
+            yield {"label": completion.name_with_symbols, "type": completion.type}
+
+    def to_rpc(completions: List[Completion]) -> List[Dict[str, Any]]:
+        """convert completion results to rpc"""
+
+        return list(build_rpc(completions))
+
+    def complete(
+        source: str, *, line: int, column: int, project: Project = None
+    ) -> Completions:
+        """complete script at following pos(line, column)
+
+        Raises:
+            ValueError: column > len(line_content)
+        """
+
+        script = Script(code=source, project=project)
+        results = script.complete(line=line, column=column)
+        return Completions(results)
 
 
-def build_rpc(completions: List[Completion]) -> Iterator[Dict[str, Any]]:
-    """build rpc content"""
-
-    for completion in completions:
-        yield {"label": completion.name_with_symbols, "type": completion.type}
-
-
-def to_rpc(completions: List[Completion]) -> List[Dict[str, Any]]:
-    """convert completion results to rpc"""
-
-    return list(build_rpc(completions))
-
-
-def complete(
-    source: str, *, line: int, column: int, project: Project = None
-) -> Completions:
-    """complete script at following pos(line, column)
-
-    Raises:
-        ValueError: column > len(line_content)
-    """
-
-    script = Script(code=source, project=project)
-    results = script.complete(line=line, column=column)
-    return Completions(results)
+except ImportError:
+    print("module 'jedi' not installed, code completion may not available")

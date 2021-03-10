@@ -10,7 +10,7 @@ import logging
 from typing import Callable, Text, Dict, Any
 from importlib.util import find_spec
 
-from . import service
+from .service import completion, hover, document_formatting, analyzer, rename
 
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ def get_rpc_content(message: bytes) -> str:
         header, content = message.split(RPC_SEPARATOR)
     except (ValueError, TypeError) as err:
         logger.error("unable parse rpc message from %s", message)
-        raise ContentInvalid from err
+        raise ContentInvalid(err) from err
 
     if len(content) < content_length(header):
         logger.debug(
@@ -287,7 +287,7 @@ class Server:
         project = (
             None
             if not self.workspace_directory
-            else service.jedi_project(self.workspace_directory)
+            else completion.Project(self.workspace_directory)
         )
         try:
             src = params["uri"]
@@ -295,14 +295,14 @@ class Server:
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            completions = service.complete(
+            completions = completion.complete(
                 src, line=line, column=character, project=project
             )
-            return service.to_rpc(completions)
+            return completion.to_rpc(completions)
         except KeyError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
         except ValueError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
 
     def hover(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         """hover
@@ -313,7 +313,7 @@ class Server:
         project = (
             None
             if not self.workspace_directory
-            else service.jedi_project(self.workspace_directory)
+            else hover.Project(self.workspace_directory)
         )
         try:
             src = params["uri"]
@@ -321,14 +321,14 @@ class Server:
             character = params["location"]["character"]
 
             line += 1  # jedi use 1 based index
-            helps = service.get_documentation(
+            helps = hover.get_documentation(
                 src, line=line, column=character, project=project
             )
-            return service.to_rpc(helps)
+            return hover.to_rpc(helps)
         except KeyError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
         except ValueError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
 
     @staticmethod
     def document_format(params: "Dict[str, Any]") -> "Dict[str, Any]":
@@ -339,12 +339,12 @@ class Server:
 
         try:
             src = params["uri"]
-            results = service.format_document(src)
-            return service.to_rpc(results, source=src)
+            results = document_formatting.format_document(src)
+            return document_formatting.to_rpc(results, source=src)
         except KeyError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
         except ValueError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
 
     def change_workspace(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         """change workspace configg
@@ -356,9 +356,9 @@ class Server:
             path = params["uri"]
             self.workspace_directory = path
         except KeyError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
         except ValueError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
         else:
             return {"workspace_directory": self.workspace_directory}
 
@@ -370,11 +370,11 @@ class Server:
 
         try:
             path = params["uri"]
-            return service.lint(path)
+            return analyzer.lint(path)
         except KeyError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
         except ValueError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
 
     def rename(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
         """rename
@@ -388,18 +388,18 @@ class Server:
             offset = params.get("location", None)
             new_name = params["new_name"]
 
-            changes = service.rename_attribute(
+            changes = rename.rename_attribute(
                 project_path=project_path,
                 resource_path=path,
                 offset=offset if offset and offset > 0 else None,
                 new_name=new_name,
             )
 
-            return service.to_rpc(changes)
+            return rename.to_rpc(changes)
         except KeyError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
         except ValueError as err:
-            raise InvalidParams from err
+            raise InvalidParams(err) from err
 
 
 def main():
