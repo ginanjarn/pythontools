@@ -1,6 +1,6 @@
-# PYTOOLS
+# PYTHONTOOLS
 
-Lightweight python tools for Sublime Text.
+Lightweight python tools for **SublimeText**.
 
 ---
 
@@ -20,15 +20,15 @@ Lightweight python tools for Sublime Text.
 
 ### Plugin
 
-Download [release](https://github.com/ginanjarn/pythontools/archive/master.zip) version from github or clone `https://github.com/ginanjarn/pythontools.git`  to *SublimeText* `package directory`.
+Download [release](https://github.com/ginanjarn/pythontools/archive/master.zip) version from github or clone `https://github.com/ginanjarn/pythontools.git` to **SublimeText** `package directory`.
 
-> On **SublimeText** : `Preferences -> Browse Packages` to open `package directory`.
+> On **SublimeText** : `Preferences` `->` `Browse Packages` to open `PACKAGES directory`.
 
 ### Python
 
-Install any **python** distribution, prefer **anaconda** easy to use with many included package.
+Install any **python** distribution, prefer **anaconda** python distribution with battery-included package.
 
-Install following requires packages:
+Install following required packages:
 
 - **jedi**
 
@@ -38,49 +38,59 @@ Install following requires packages:
 
 > Install command:
 > 
-> `conda instal <package-name>` if use `conda` or `pip install <package-name>` if use `pip`.
+> * Conda         : `conda instal <package-name>`
+> 
+> * Pip         : `pip install <package-name>`
 
 ---
 
 ## USAGE
 
-#### Preparation
+### Preparation
 
-1. Setup **`python interpreter`**. Open command palette (`Ctrl+Shift+P`). `-> Python Interpreter`.
+1. Setup **`python interpreter`**. Open command palette (`Ctrl+Shift+P`) `->` `Python Interpreter`.
 
-> *System installed* **python** and *default installation* **anaconda** automatically detected. Manual input path required if not any **interpreter** found.
+> Interpreter scan in `PATH` and `Anaconda PATH`.
 
-2. Setup activated feature(Optional).  Open command palette by`Ctrl+Shift+P`. Run `Feature Config`.
+2. Install [required packages](#Python). Bypass if already installed.
 
-#### Completion
+3. Configure **disabled** features (*Optional*).  Open command palette `(Ctrl+Shift+P)` `->` `Feature Config`.
 
-Completion show on typing source.
+> Default all features **enabled**.
 
-#### Documentation
+### Completion
 
-Hover above identifier word to show documentation.
+Completion pop-up while typing.
 
-#### Format code
+### Documentation
 
-Open command palette (`Ctrl+Shift+P`) `-> Format document`.
+Hover above identifier show documentation pop-up.
 
-#### Linting
+### Format code
 
-Open command palette (`Ctrl+Shift+P`) `-> Lint module`.
+Open command palette (`Ctrl+Shift+P`) `->` `Format document`.
+
+> Notice: check formatting changes before save to prevent future bugs.
+
+### Linting
+
+Open command palette (`Ctrl+Shift+P`) `->` `Lint module`.
 
 ---
 
 ## TROUBLESHOOT
 
-* This plugin conflic with other pyhon completion plugin. Try to disable or remove thr plugin.
+* This plugin conflict with other python completion plugin. Try to disable or remove the plugin.
 
-* Python must be setup. Manual setting on `$SUBLIMETEXT_PACKAGE_DIRECTORY/User/Pythools.sublime-settings`.
+* Python interpreter must be setup.
+  
+  Manual setting on `PACKAGES/User/Pytools.sublime-settings`.
 
-* Required `python package` : `jedi, black, pylint`.
+* Required `python package` : `jedi`, `black`, `pylint`.
 
 ## LICENSE
 
-`Copyright (c) 2021 ginanjarn
+`Copyright (c) 2021 ginanjarn.
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights

@@ -1,4 +1,4 @@
-"""analyzer"""
+"""hover"""
 
 
 import logging
@@ -13,8 +13,8 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-def get_diagnostic(path: str) -> "ResponseMessage":
-    """get diagnostic data
+def fetch_documentation(src: str, line: int, character: int) -> "ResponseMessage":
+    """get documentation
 
     Raises:
         InvalidInput
@@ -22,12 +22,12 @@ def get_diagnostic(path: str) -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage("textDocument.get_diagnostic")
+    message = RequestMessage("textDocument.hover")
     message.params = {
-        "uri": path,
+        "uri": src,
+        "location": {"line": line, "character": character},
     }
     logger.debug(message)
     response = request(message.to_rpc())
     logger.debug(response)
-    response_message = ResponseMessage.from_rpc(response)
-    return response_message
+    return ResponseMessage.from_rpc(response)

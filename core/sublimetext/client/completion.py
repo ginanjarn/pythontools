@@ -13,7 +13,7 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-def fetch_completion(src: str, line: str, character: str) -> "ResponseMessage":
+def fetch_completion(src: str, line: int, character: int) -> "ResponseMessage":
     """get completion data
 
     Raises:
@@ -29,5 +29,4 @@ def fetch_completion(src: str, line: str, character: str) -> "ResponseMessage":
     }
     response = request(message.to_rpc())
     logger.debug(response)
-    response_message = ResponseMessage.from_rpc(response)
-    return response_message
+    return ResponseMessage.from_rpc(response)

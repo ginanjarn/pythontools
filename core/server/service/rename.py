@@ -1,13 +1,14 @@
-"""document formatting module"""
+"""document rename module"""
 
 
-from typing import Tuple, List, Any, Dict
+from typing import Text, Tuple, List, Iterator, Any, Union, Dict, Optional
+import os
 import re
 import difflib
 import logging
 
 
-logger = logging.getLogger("formatting")
+logger = logging.getLogger("rename")
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
 sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
@@ -16,10 +17,12 @@ logger.addHandler(sh)
 
 
 try:
-    import black
+    from rope.base import project, libutils
+    from rope.base.change import ChangeSet, MoveResource, ChangeContents
+    from rope.refactor.rename import Rename
 
-    class FormattingChanges(str):
-        """source changes"""
+    class RenameChanges(object):
+        """rename changes object"""
 
     def get_removed(line: str) -> Tuple[int, int]:
         """get diff removed line"""
@@ -107,29 +110,85 @@ try:
 
             return self.blocks
 
-    def to_rpc(results: str, *, source: str) -> Dict[str, Any]:
-        return TextEdit(old=source, new=results).to_rpc()
+    class DocumentChanges:
+        """Document changes object"""
 
-    def format_with_black(source: str) -> FormattingChanges:
-        mode = black.FileMode(
-            target_versions=set(),
-            is_pyi=False,
-            line_length=black.DEFAULT_LINE_LENGTH,
-            string_normalization=True,
-        )
-        try:
-            formatted = black.format_file_contents(source, fast=False, mode=mode)
-        except black.NothingChanged:
-            return source
-        return FormattingChanges(formatted)
+        def __init__(self, file_name: str, *, old: str, new: str) -> None:
+            self.file_name = file_name
+            self.old_source: str = old
+            self.new_source: str = new
 
-    def format_document(source: str) -> FormattingChanges:
-        """format document"""
+        def to_rpc(self) -> Dict[str, Any]:
+            """convert to rpc"""
 
-        doc_changes = format_with_black(source)
-        logger.debug(doc_changes)
-        return FormattingChanges(doc_changes)
+            changes = TextEdit(old=self.old_source, new=self.new_source).to_rpc()
+            results = {
+                "type": "change",
+                "file_name": self.file_name,
+                "changes": changes,
+            }
+            logger.debug(results)
+            return results
+
+    class DocumentRename:
+        """Document rename object"""
+
+        def __init__(self, old_name: str, new_name: str) -> None:
+            self.old_name = old_name
+            self.new_name = new_name
+
+        def to_rpc(self) -> Dict[str, Any]:
+            """convert to rpc"""
+
+            results = {
+                "type": "rename",
+                "changes": {"old_name": self.old_name, "new_name": self.new_name,},
+            }
+            logger.debug(results)
+            return results
+
+    def rpc_generator(change_set: ChangeSet) -> Iterator[Any]:
+        """rpc generator"""
+
+        for change in change_set.changes:
+            if isinstance(change, MoveResource):
+                change: MoveResource = change
+                yield DocumentRename(
+                    old_name=change.resource.real_path,
+                    new_name=change.new_resource.real_path,
+                ).to_rpc()
+
+            elif isinstance(change, ChangeContents):
+                change: ChangeContents = change
+                diff_change = change.get_description()
+                file_name = change.resource.real_path
+                old_src = change.resource.read()
+                yield DocumentChanges(
+                    file_name, old=old_src, new=change.new_contents
+                ).to_rpc()
+
+    def to_rpc(change_set: ChangeSet) -> List[Any]:
+        """convert to rpc"""
+
+        return list(rpc_generator(change_set))
+
+    def rename_attribute(
+        project_path: str, resource_path: str, offset: Optional[int], new_name: str
+    ) -> RenameChanges:
+        """
+
+        Raises:
+            RefactoringError
+        """
+        project_manager = project.Project(project_path)
+        file_resource = libutils.path_to_resource(project_manager, resource_path)
+
+        rename_task = Rename(project_manager, file_resource, offset)
+        changes = rename_task.get_changes(new_name)
+
+        project_manager.close()
+        return RenameChanges(changes)
 
 
 except ImportError:
-    print("module 'black' not installed, code formatting may not available")
+    print("module 'rope' not installed, code rename may not available")

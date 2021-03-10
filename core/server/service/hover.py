@@ -2,8 +2,9 @@
 
 
 from html import escape
-from jedi import Script, Project
+from typing import List, Dict, Any, Optional
 import logging
+
 
 logger = logging.getLogger("formatting")
 # logger.setLevel(logging.DEBUG)
@@ -13,65 +14,71 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-def get_project(path: str) -> "Project":
-    """get project property"""
-    return Project(path)
+try:
+    from jedi import Script, Project
+    from jedi.api.classes import BaseName
 
+    class Documentations(list):
+        """documentation list"""
 
-def render_html(header: str, docs: str = None) -> str:
-    """render docstring to html"""
-
-    if not header:
-        return ""
-
-    def escape_space(doc: str):
-        """replace 'space' -> '&nbsp;'"""
+    def escape_space(doc: str) -> str:
+        """replace 'double space' -> '&nbsp;'"""
         return doc.replace("  ", "&nbsp;&nbsp;")
 
-    def escape_newline(doc: str):
+    def escape_newline(doc: str) -> str:
         """replace '\\n' -> '<br>'"""
         return doc.replace("\n", "<br>")
 
-    def document_body(docs):
+    def document_body(docs: Optional[str]) -> str:
         """build documentation body"""
-        if not docs:
-            return ""
-        return "<p>%s</p>" % escape_newline(escape_space(escape(docs, quote=False)))
+        return (
+            "<p>%s</p>" % escape_newline(escape_space(escape(docs, quote=False)))
+            if docs
+            else ""
+        )
 
-    return "".join([header, document_body(docs)])
+    def render_html(header: str, docs: str = None) -> str:
+        """render docstring to html"""
+        return "".join([header, document_body(docs)]) if header else ""
 
-
-def to_rpc(helps: "List[Name]") -> "Dict[str, Any]":
-    """convert docstring to rpc"""
-
-    def make_rpc(helps):
-        help_ = helps[0]
+    def build_rpc(help_: BaseName) -> Optional[Dict[str, Any]]:
+        """build rpc content"""
 
         header_template = '<code><a href="">{module}.{name}</a> (<em>{type_}</em>)</code>'.format(
             module=help_.module_name, name=help_.name, type_=help_.type
         )
 
-        if help_.is_keyword:
-            return None
+        return (
+            None
+            if help_.is_keyword
+            else {
+                "html": render_html(header_template, help_.docstring()),
+                "link": {
+                    "path": help_.module_path,
+                    "line": help_.line,
+                    "character": help_.column,
+                },
+            }
+        )
 
-        return {
-            "html": render_html(header_template, help_.docstring()),
-            "link": {
-                "path": help_.module_path,
-                "line": help_.line,
-                "character": help_.column,
-            },
-        }
+    def to_rpc(helps: List[BaseName]) -> Optional[Dict[str, Any]]:
+        """convert docstring to rpc"""
 
-    return make_rpc(helps) if any(helps) else None
+        return build_rpc(helps[0]) if helps else None
+
+    def get_documentation(
+        source: str, *, line: int, column: int, project: Project = None
+    ) -> Documentations:
+        """complete script at following pos(line, column)
+
+        Raises:
+            ValueError: column > len(line_content)
+        """
+
+        script = Script(code=source, project=project)
+        results = script.help(line=line, column=column)
+        return Documentations(results)
 
 
-def get_documentation(source: str, line: int, column: int, **kwargs) -> "Any":
-    """complete script at following pos(line, column)"""
-    project = kwargs.get("project", None)
-    path = kwargs.get("path", "")
-    # logger.debug(project)
-    script = Script(code=source, path=path, project=project)
-    results = script.help(line=line, column=column)
-    raw = kwargs.get("raw", None)
-    return to_rpc(results) if not raw else results
+except ImportError:
+    print("module 'jedi' not installed, code docstring may not available")

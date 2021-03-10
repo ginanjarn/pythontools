@@ -1,4 +1,4 @@
-"""document format"""
+"""analyzer"""
 
 
 import logging
@@ -13,8 +13,8 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-def format_code(src: str) -> "ResponseMessage":
-    """prettify code
+def get_diagnostic(path: str) -> "ResponseMessage":
+    """get diagnostic data
 
     Raises:
         InvalidInput
@@ -22,9 +22,11 @@ def format_code(src: str) -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage("textDocument.formatting")
-    message.params = {"uri": src}
+    message = RequestMessage("textDocument.get_diagnostic")
+    message.params = {
+        "uri": path,
+    }
+    logger.debug(message)
     response = request(message.to_rpc())
     logger.debug(response)
-    response_message = ResponseMessage.from_rpc(response)
-    return response_message
+    return ResponseMessage.from_rpc(response)
