@@ -54,7 +54,7 @@ try:
             else {
                 "html": render_html(header_template, help_.docstring()),
                 "link": {
-                    "path": str(help_.module_path),
+                    "path": str(help_.module_path) if help_.module_path else None,
                     "line": help_.line,
                     "character": help_.column,
                 },
