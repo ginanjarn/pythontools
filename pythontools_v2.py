@@ -6,6 +6,7 @@ import sublime_plugin  # pylint: disable=import-error
 import threading
 import logging
 import os
+import time
 from .core.sublimetext import client
 from .core.sublimetext import document
 from .core.sublimetext import settings as python_settings
@@ -55,17 +56,29 @@ def feature_enabled(feature_name: str, *, default=False) -> bool:
     return sublime_settings.get(feature_name, default)
 
 
+class ServerCapability(dict):
+    """server capability"""
+
+
 SERVER_ONLINE = False
 
 
-def check_connection():
+def set_offline(status=True):
     global SERVER_ONLINE
+
+    SERVER_ONLINE = not status
+
+
+def check_connection():
+    # global SERVER_ONLINE
     try:
         client.ping()
     except client.ServerOffline:
-        SERVER_ONLINE = False
+        # SERVER_ONLINE = False
+        set_offline()
     else:
-        SERVER_ONLINE = True
+        # SERVER_ONLINE = True
+        set_offline(False)
 
 
 INITIALIZED = False
@@ -73,19 +86,27 @@ INITIALIZED = False
 
 @request_lock
 def initialize():
+    logger.info("initialize")
+
     global SERVER_ONLINE
     global INITIALIZED
 
     if INITIALIZED:
         return
     try:
-        client.initialize()
+        result = client.initialize()
     except client.ServerOffline:
-        SERVER_ONLINE = False
+        # SERVER_ONLINE = False
+        logger.debug("ServerOffline")
+        set_offline()
         INITIALIZED = False
     else:
-        SERVER_ONLINE = True
+        # SERVER_ONLINE = True
+        logger.debug("ServerOnline")
+        set_offline(False)
         INITIALIZED = True
+    finally:
+        logger.debug("SERVER_ONLINE : %s, INITIALIZED : %s", SERVER_ONLINE, INITIALIZED)
 
 
 WORKSPACE_DIRECTORY = None
@@ -119,205 +140,6 @@ def valid_attribute(view, pos):
         ]
     )
     return result
-
-
-class ServerCapability(dict):
-    """server capability"""
-
-
-def plugin_loaded():
-    thread = threading.Thread(target=check_connection)
-    thread.start()
-    # TODO: HANDLE ON SETTINGS CHANGE --------------------------------------------
-
-
-class Event(sublime_plugin.ViewEventListener):
-    def __init__(self, view):
-        self.view = view
-
-        self.completion = None
-
-        self.cached_completion = None
-        self.temp_completion_src = ""
-        self.cached_docstring = None
-        self.temp_docstring_src = ""
-
-    @staticmethod
-    def build_completion(completions: "Iterable") -> "Iterator[Any, Any]":
-        """build completion"""
-
-        for completion in completions:
-            yield (
-                "%s  \t%s" % (completion["label"], completion["type"]),
-                completion["label"],
-            )
-
-    @request_lock
-    def fetch_completions(self, prefix, location):
-        view = self.view
-
-        start = 0
-        end = location
-        word_region = view.word(location)
-        if view.substr(word_region).isidentifier() and len(prefix) > 1:
-            end = word_region.a  # complete at first identifier offset
-        source_region = sublime.Region(start, end)
-        line, character = view.rowcol(end)  # get rowcol at end selection
-
-        source = view.substr(source_region)
-
-        if self.temp_completion_src == source:
-            self.completion = self.cached_completion
-            return None
-        else:
-            try:
-                initialize()
-                work_dir = os.path.dirname(view.file_name())
-                change_workspace(work_dir)
-                result = client.fetch_completion(source, line, character)
-            except client.ServerOffline:
-                logger.debug("ServerOffline")
-                return None
-            else:
-                if result.error:
-                    logger.info(result.error)
-                    return None
-                self.temp_completion_src = source
-                self.cached_completion = (
-                    list(self.build_completion(result.results)),
-                    sublime.INHIBIT_WORD_COMPLETIONS
-                    | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
-                )
-                self.completion = self.cached_completion
-
-        document.show_completions(view)
-
-    @instance_lock
-    def on_query_completions(self, prefix, locations):
-        logger.info("on query completions")
-        view = self.view
-        if all(
-            [
-                valid_source(view),
-                valid_attribute(view, locations[0]),
-                feature_enabled("autocomplete", default=True),
-            ]
-        ):
-            if self.completion:
-                completion = self.completion
-                self.completion = None
-                return completion
-
-            thread = threading.Thread(
-                target=self.fetch_completions, args=(prefix, locations[0])
-            )
-            thread.start()
-
-    @staticmethod
-    def decorate(content) -> str:
-        """decorate popup content"""
-        return '<div style="padding: .5em">%s</div>' % content
-
-    @request_lock
-    def fetch_documentation(self, location):
-        """fetch documentation thread"""
-
-        view = self.view
-
-        start = 0
-        word_region = view.word(location)
-        if view.substr(word_region).isidentifier():
-            end = word_region.b  # select until end of word
-        else:
-            return  # cancel request for non identifier
-        source_region = sublime.Region(start, end)
-        source = view.substr(source_region)
-
-        line, character = view.rowcol(end)  # get rowcol at end selection
-
-        content, link = None, None
-
-        if self.temp_docstring_src == source:
-            content, link = self.cached_docstring
-        else:
-            try:
-                initialize()
-                work_dir = os.path.dirname(view.file_name())
-                change_workspace(work_dir)
-
-                result = client.fetch_documentation(
-                    view.substr(source_region), line, character
-                )
-                logger.debug(result)
-            except client.ServerOffline:
-                logger.debug("ServerOffline")
-                pass
-            except Exception:
-                logger.error("fetch documentation", exc_info=True)
-            else:
-                if result.error:
-                    logger.debug("documentation error:\n%s", result.error)
-                    return
-
-                logger.debug("result = %s", result.results)
-                if not result.results:
-                    return  # cancel
-
-                content = result.results.get("html")
-                link = result.results.get("link")
-
-                self.temp_docstring_src = source
-                self.cached_docstring = (content, link)
-
-            if content:
-                document.show_popup(
-                    view,
-                    self.decorate(content),
-                    location,
-                    lambda _: document.open_link(view, link),
-                )
-
-    @instance_lock
-    def on_hover(self, point, hover_zone):
-        logger.info("on hover")
-        view = self.view
-        if all(
-            [
-                valid_source(view),
-                valid_attribute(view, point),
-                feature_enabled("documentation", default=True),
-                hover_zone == sublime.HOVER_TEXT,
-            ]
-        ):
-
-            thread = threading.Thread(target=self.fetch_documentation, args=(point,))
-            thread.start()
-
-
-class PytoolsFormatCommand(sublime_plugin.TextCommand):
-    """Formatting command"""
-
-    def run(self, edit):
-        logger.info("on format document")
-        view = self.view
-        if all([valid_source(view), feature_enabled("format_document", default=True)]):
-
-            source = view.substr(sublime.Region(0, view.size()))
-            try:
-                results = client.format_code(source)
-            except client.ServerOffline:
-                logger.debug("ServerOffline")
-                pass
-            except Exception:
-                logger.error("format document", exc_info=True)
-            else:
-                if results.error:
-                    return
-                logger.debug(results)
-                document.apply_changes(view, edit, results.results)
-
-    def is_visible(self):
-        return valid_source(self.view)
 
 
 SERVER_ERROR = False
@@ -390,6 +212,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             self.window.status_message("Server ready")
             # self.window.active_view().run_command("pytools_change_workspace")
             # initialize_server()
+            time.sleep(0.5)
             initialize()
 
 
@@ -411,10 +234,239 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
         try:
             response = client.shutdown()
         except client.ServerOffline:
+            set_offline()
             logger.debug("ServerOffline")
             pass
         except Exception:
             logger.error("shutdown server", exc_info=True)
         else:
+            set_offline()
             # SERVER_STATE.reset()
             logger.debug("finish shutdown server")
+
+
+def start_server(func):
+    def wrapper(*args, **kwargs):
+        if SERVER_ONLINE:
+            return func(*args, **kwargs)
+        if SERVER_ERROR:
+            logger.debug("ServerError")
+            return None
+        logger.debug(
+            "SERVER_ONLINE : %s, SERVER_ERROR : %s", SERVER_ONLINE, SERVER_ERROR
+        )
+        sublime.active_window().run_command("pytools_runserver")
+        return None
+
+    return wrapper
+
+
+def plugin_loaded():
+    thread = threading.Thread(target=check_connection)
+    thread.start()
+    # TODO: HANDLE ON SETTINGS CHANGE --------------------------------------------
+
+
+class Event(sublime_plugin.ViewEventListener):
+    def __init__(self, view):
+        self.view = view
+
+        self.completion = None
+
+        self.cached_completion = None
+        self.temp_completion_src = ""
+        self.cached_docstring = None
+        self.temp_docstring_src = ""
+
+    @staticmethod
+    def build_completion(completions: "Iterable") -> "Iterator[Any, Any]":
+        """build completion"""
+
+        for completion in completions:
+            yield (
+                "%s  \t%s" % (completion["label"], completion["type"]),
+                completion["label"],
+            )
+
+    @start_server
+    @instance_lock
+    @request_lock
+    def fetch_completions(self, prefix, location):
+        view = self.view
+
+        start = 0
+        end = location
+        word_region = view.word(location)
+        if view.substr(word_region).isidentifier() and len(prefix) > 1:
+            end = word_region.a  # complete at first identifier offset
+        source_region = sublime.Region(start, end)
+        line, character = view.rowcol(end)  # get rowcol at end selection
+
+        source = view.substr(source_region)
+
+        if self.temp_completion_src == source:
+            self.completion = self.cached_completion
+            return None
+        else:
+            try:
+                initialize()
+                work_dir = os.path.dirname(view.file_name())
+                change_workspace(work_dir)
+                result = client.fetch_completion(source, line, character)
+            except client.ServerOffline:
+                set_offline()
+                logger.debug("ServerOffline")
+                return None
+            else:
+                if result.error:
+                    logger.info(result.error)
+                    return None
+                self.temp_completion_src = source
+                self.cached_completion = (
+                    list(self.build_completion(result.results)),
+                    sublime.INHIBIT_WORD_COMPLETIONS
+                    | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
+                )
+                self.completion = self.cached_completion
+
+        document.show_completions(view)
+
+    # @instance_lock
+    def on_query_completions(self, prefix, locations):
+        logger.info("on query completions")
+        view = self.view
+        if all(
+            [
+                valid_source(view),
+                valid_attribute(view, locations[0]),
+                feature_enabled("autocomplete", default=True),
+            ]
+        ):
+            if self.completion:
+                completion = self.completion
+                self.completion = None
+                return completion
+
+            thread = threading.Thread(
+                target=self.fetch_completions, args=(prefix, locations[0])
+            )
+            thread.start()
+
+    @staticmethod
+    def decorate(content) -> str:
+        """decorate popup content"""
+        return '<div style="padding: .5em">%s</div>' % content
+
+    @start_server
+    @instance_lock
+    @request_lock
+    def fetch_documentation(self, location):
+        """fetch documentation thread"""
+
+        view = self.view
+
+        start = 0
+        word_region = view.word(location)
+        if view.substr(word_region).isidentifier():
+            end = word_region.b  # select until end of word
+        else:
+            return  # cancel request for non identifier
+        source_region = sublime.Region(start, end)
+        source = view.substr(source_region)
+
+        line, character = view.rowcol(end)  # get rowcol at end selection
+
+        content, link = None, None
+
+        if self.temp_docstring_src == source:
+            content, link = self.cached_docstring
+        else:
+            try:
+                initialize()
+                work_dir = os.path.dirname(view.file_name())
+                change_workspace(work_dir)
+
+                result = client.fetch_documentation(
+                    view.substr(source_region), line, character
+                )
+                logger.debug(result)
+            except client.ServerOffline:
+                set_offline()
+                logger.debug("ServerOffline")
+                pass
+            except Exception:
+                logger.error("fetch documentation", exc_info=True)
+            else:
+                if result.error:
+                    logger.debug("documentation error:\n%s", result.error)
+                    return
+
+                logger.debug("result = %s", result.results)
+                if not result.results:
+                    return  # cancel
+
+                content = result.results.get("html")
+                link = result.results.get("link")
+
+                self.temp_docstring_src = source
+                self.cached_docstring = (content, link)
+
+            if content:
+                document.show_popup(
+                    view,
+                    self.decorate(content),
+                    location,
+                    lambda _: document.open_link(view, link),
+                )
+
+    # @instance_lock
+    def on_hover(self, point, hover_zone):
+        logger.info("on hover")
+        view = self.view
+        if all(
+            [
+                valid_source(view),
+                valid_attribute(view, point),
+                feature_enabled("documentation", default=True),
+                hover_zone == sublime.HOVER_TEXT,
+            ]
+        ):
+
+            thread = threading.Thread(target=self.fetch_documentation, args=(point,))
+            thread.start()
+
+
+class PytoolsFormatCommand(sublime_plugin.TextCommand):
+    """Formatting command"""
+
+    @start_server
+    @instance_lock
+    def run(self, edit):
+        logger.info("on format document")
+        view = self.view
+        if all([valid_source(view), feature_enabled("format_document", default=True)]):
+
+            source = view.substr(sublime.Region(0, view.size()))
+            try:
+                results = client.format_code(source)
+            except client.ServerOffline:
+                set_offline()
+                logger.debug("ServerOffline")
+                pass
+            except Exception:
+                logger.error("format document", exc_info=True)
+            else:
+                if results.error:
+                    return
+                logger.debug(results)
+                document.apply_changes(view, edit, results.results)
+
+    def is_visible(self):
+        return valid_source(self.view)
+
+
+class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):
+    """Shutdown command"""
+
+    def run(self):
+        print("SERVER_ONLINE : %s, SERVER_ERROR : %s" % (SERVER_ONLINE, SERVER_ERROR))
