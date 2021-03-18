@@ -61,6 +61,11 @@ def request_lock(func):
 
 SETTINGS_BASENAME = "Pytools.sublime-settings"
 
+# Features name
+F_AUTOCOMPLETE = "autocomplete"
+F_DOCUMENTATION = "documentation"
+F_DOCUMENT_FORMATTING = "document_fomatting"
+
 
 def feature_enabled(feature_name: str, *, default=False) -> bool:
     """check if feature enabled on settings"""
@@ -395,7 +400,7 @@ class Event(sublime_plugin.ViewEventListener):
             [
                 valid_source(view),
                 valid_attribute(view, locations[0]),
-                feature_enabled("autocomplete", default=True),
+                feature_enabled(F_AUTOCOMPLETE, default=True),
             ]
         ):
             if self.completion:
@@ -489,7 +494,7 @@ class Event(sublime_plugin.ViewEventListener):
             [
                 valid_source(view),
                 valid_attribute(view, point),
-                feature_enabled("documentation", default=True),
+                feature_enabled(F_DOCUMENTATION, default=True),
                 hover_zone == sublime.HOVER_TEXT,
             ]
         ):
@@ -508,7 +513,9 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
 
         view = self.view
 
-        if all([valid_source(view), feature_enabled("format_document", default=True)]):
+        if all(
+            [valid_source(view), feature_enabled(F_DOCUMENT_FORMATTING, default=True)]
+        ):
 
             source = view.substr(sublime.Region(0, view.size()))
 
