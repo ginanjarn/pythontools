@@ -276,7 +276,8 @@ class Event(sublime_plugin.ViewEventListener):
         self.cached_completion = None
         self.temp_completion_src = ""
         self.cached_docstring = None
-        self.temp_docstring_src = ""
+        # self.temp_docstring_src = ""
+        self.temp_docstring_size = -1
 
     @staticmethod
     def build_completion(completions: "Iterable") -> "Iterator[Any, Any]":
@@ -369,16 +370,24 @@ class Event(sublime_plugin.ViewEventListener):
         word_region = view.word(location)
         if view.substr(word_region).isidentifier():
             end = word_region.b  # select until end of word
+            logger.debug("keyword = %s", view.substr(word_region))
         else:
             return  # cancel request for non identifier
         source_region = sublime.Region(start, end)
         source = view.substr(source_region)
+        # logger.debug("source len = %s",source_region.size())
+        source_size = source_region.size()
 
         line, character = view.rowcol(end)  # get rowcol at end selection
 
         content, link = None, None
 
-        if self.temp_docstring_src == source:
+        # logger.debug("same source = %s", self.temp_docstring_src == source)
+        logger.debug("cached : %s, current : %s", self.temp_docstring_size , source_size)
+
+        if self.temp_docstring_size == source_size:
+        # if self.temp_docstring_src == source:
+            logger.debug("use cached docstring : %s", self.cached_docstring)
             content, link = self.cached_docstring
         else:
             try:
@@ -408,16 +417,17 @@ class Event(sublime_plugin.ViewEventListener):
                 content = result.results.get("html")
                 link = result.results.get("link")
 
-                self.temp_docstring_src = source
+                self.temp_docstring_size = source_region.size()
+                # self.temp_docstring_src = source
                 self.cached_docstring = (content, link)
 
-            if content:
-                document.show_popup(
-                    view,
-                    self.decorate(content),
-                    location,
-                    lambda _: document.open_link(view, link),
-                )
+        if content:
+            document.show_popup(
+                view,
+                self.decorate(content),
+                location,
+                lambda _: document.open_link(view, link),
+            )
 
     # @instance_lock
     def on_hover(self, point, hover_zone):
