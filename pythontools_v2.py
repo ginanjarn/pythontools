@@ -64,10 +64,10 @@ SETTINGS_BASENAME = "Pytools.sublime-settings"
 # Features name
 F_AUTOCOMPLETE = "autocomplete"
 F_DOCUMENTATION = "documentation"
-F_DOCUMENT_FORMATTING = "document_fomatting"
+F_DOCUMENT_FORMATTING = "document_formatting"
 
 
-def feature_enabled(feature_name: str, *, default=False) -> bool:
+def feature_enabled(feature_name: str, *, default=True) -> bool:
     """check if feature enabled on settings"""
 
     sublime_settings = sublime.load_settings(SETTINGS_BASENAME)
@@ -76,6 +76,21 @@ def feature_enabled(feature_name: str, *, default=False) -> bool:
 
 class ServerCapability(dict):
     """server capability"""
+
+
+SERVER_CAPABILITY = ServerCapability()
+
+
+def server_capable(feature_name: str, *, default=False) -> bool:
+    """check if server capable perform feature"""
+
+    return SERVER_CAPABILITY.get(feature_name, default)
+
+
+def feature_available(feature_name: str) -> bool:
+    """available if feature enabled and server capable"""
+
+    return feature_enabled(feature_name) and server_capable(feature_name)
 
 
 SERVER_ONLINE = False
@@ -129,8 +144,21 @@ def initialize():
 
     else:
         logger.debug("ServerOnline")
-        set_offline(False)
+        set_offline(False)  # online
         INITIALIZED = True
+
+        if result.error:
+            return
+
+        global SERVER_CAPABILITY
+
+        # apply capability
+        SERVER_CAPABILITY[F_AUTOCOMPLETE] = result.results.get("completion", False)
+        SERVER_CAPABILITY[F_DOCUMENTATION] = result.results.get("hover", False)
+        SERVER_CAPABILITY[F_DOCUMENT_FORMATTING] = result.results.get(
+            "document_format", False
+        )
+        logger.debug(SERVER_CAPABILITY)
 
     finally:
         logger.debug("SERVER_ONLINE : %s, INITIALIZED : %s", SERVER_ONLINE, INITIALIZED)
@@ -312,7 +340,7 @@ def plugin_loaded():
     sublime definition for plugin_loaded event
     """
 
-    thread = threading.Thread(target=check_connection)
+    thread = threading.Thread(target=initialize)
     thread.start()
     # TODO: HANDLE ON SETTINGS CHANGE --------------------------------------------
 
@@ -400,7 +428,8 @@ class Event(sublime_plugin.ViewEventListener):
             [
                 valid_source(view),
                 valid_attribute(view, locations[0]),
-                feature_enabled(F_AUTOCOMPLETE, default=True),
+                # feature_enabled(F_AUTOCOMPLETE, default=True),
+                feature_available(F_AUTOCOMPLETE), 
             ]
         ):
             if self.completion:
@@ -494,7 +523,8 @@ class Event(sublime_plugin.ViewEventListener):
             [
                 valid_source(view),
                 valid_attribute(view, point),
-                feature_enabled(F_DOCUMENTATION, default=True),
+                # feature_enabled(F_DOCUMENTATION, default=True),
+                feature_available(F_DOCUMENTATION),
                 hover_zone == sublime.HOVER_TEXT,
             ]
         ):
@@ -514,7 +544,11 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
         view = self.view
 
         if all(
-            [valid_source(view), feature_enabled(F_DOCUMENT_FORMATTING, default=True)]
+            [
+                valid_source(view),
+                # feature_enabled(F_DOCUMENT_FORMATTING, default=True),
+                feature_available(F_DOCUMENT_FORMATTING),
+            ]
         ):
 
             source = view.substr(sublime.Region(0, view.size()))
@@ -544,4 +578,7 @@ class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):
     """Shutdown command"""
 
     def run(self):
-        print("SERVER_ONLINE : %s, SERVER_ERROR : %s" % (SERVER_ONLINE, SERVER_ERROR))
+        print(
+            "SERVER_ONLINE : %s, SERVER_ERROR : %s, SERVER_CAPABILITY : %s"
+            % (SERVER_ONLINE, SERVER_ERROR, SERVER_CAPABILITY)
+        )
