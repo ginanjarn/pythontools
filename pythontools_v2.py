@@ -30,10 +30,16 @@ REQUEST_LOCK = threading.RLock()
 
 
 def instance_lock(func):
+    """instance lock
+
+    prevent run multiple instance
+    """
+
     def wrapper(*args, **kwargs):
         if INSTANCE_LOCK.locked():
             logger.debug("instance locked")
             return None
+
         with INSTANCE_LOCK:
             return func(*args, **kwargs)
 
@@ -41,6 +47,11 @@ def instance_lock(func):
 
 
 def request_lock(func):
+    """request lock
+
+    prevent multiple request from outer context
+    """
+
     def wrapper(*args, **kwargs):
         with REQUEST_LOCK:
             return func(*args, **kwargs)
@@ -52,6 +63,8 @@ SETTINGS_BASENAME = "Pytools.sublime-settings"
 
 
 def feature_enabled(feature_name: str, *, default=False) -> bool:
+    """check if feature enabled on settings"""
+
     sublime_settings = sublime.load_settings(SETTINGS_BASENAME)
     return sublime_settings.get(feature_name, default)
 
@@ -64,21 +77,26 @@ SERVER_ONLINE = False
 
 
 def set_offline(status=True):
+    """set server state offline"""
+
     global SERVER_ONLINE
 
     SERVER_ONLINE = not status
 
 
 def check_connection():
-    # global SERVER_ONLINE
+    """check any server online"""
+
+    logger.info("check_connection")
+
     try:
         client.ping()
+
     except client.ServerOffline:
-        # SERVER_ONLINE = False
         set_offline()
+
     else:
-        # SERVER_ONLINE = True
-        set_offline(False)
+        set_offline(False)  # online
 
 
 INITIALIZED = False
@@ -86,6 +104,8 @@ INITIALIZED = False
 
 @request_lock
 def initialize():
+    """initialize server"""
+
     logger.info("initialize")
 
     global SERVER_ONLINE
@@ -93,18 +113,20 @@ def initialize():
 
     if INITIALIZED:
         return
+
     try:
         result = client.initialize()
+
     except client.ServerOffline:
-        # SERVER_ONLINE = False
         logger.debug("ServerOffline")
         set_offline()
         INITIALIZED = False
+
     else:
-        # SERVER_ONLINE = True
         logger.debug("ServerOnline")
         set_offline(False)
         INITIALIZED = True
+
     finally:
         logger.debug("SERVER_ONLINE : %s, INITIALIZED : %s", SERVER_ONLINE, INITIALIZED)
 
@@ -114,8 +136,12 @@ WORKSPACE_DIRECTORY = None
 
 @request_lock
 def change_workspace(directory_path) -> None:
+    """change workspace directory"""
+
     logger.info("on change workspace")
+
     global WORKSPACE_DIRECTORY
+
     if directory_path != WORKSPACE_DIRECTORY:
         result = client.change_workspace(directory_path)
         if result.results:
@@ -168,12 +194,15 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
         sublime_settings = sublime.load_settings("Pytools.sublime-settings")
         python_path = sublime_settings.get("interpreter")
+
         if not python_path:
             config = sublime.ok_cancel_dialog(
                 "Python interpreter not configured.\nConfigure now?",
             )
+
             if config:
                 self.window.run_command("pytools_python_interpreter")
+
             # else:
             # SETTINGS.disable_all()
             # TODO: HANDLE ON IGNORE ------------------------------------------
@@ -183,14 +212,17 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         thread.start()
 
     def run_server(self, python_path):
-        # if SERVER_STATE.error:  # cancel all request if server error
-        # return
+        """run server thread"""
 
         activate_path = python_settings.find_activate(python_path)
         env_path = python_settings.find_environment(python_path)
-        server_path = os.path.dirname(os.path.abspath(__file__))
-        # server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core")
+
+        server_path = os.path.dirname(
+            os.path.abspath(__file__)
+        )  # current file directory
+
         server_module = "core.server"
+
         activate_path = [path for path in (activate_path, env_path) if path]
 
         global SERVER_ERROR
@@ -199,20 +231,22 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             logger.debug("running server")
             logger.debug("%s, %s, %s", server_path, server_module, activate_path)
             client.run_server(server_path, server_module, activate_path=activate_path)
-            # SERVER_STATE.online = True
+
         except client.ServerError:
             logger.debug("server error")
-            # SERVER_STATE.error = True
-            # SERVER_STATE.online = False
             SERVER_ERROR = True
+
         except Exception:
             logger.error("run server", exc_info=True)
+
         else:
             logger.debug("server ready")
             self.window.status_message("Server ready")
-            # self.window.active_view().run_command("pytools_change_workspace")
-            # initialize_server()
+
+            # wait server activated
             time.sleep(0.5)
+
+            # initialize server
             initialize()
 
 
@@ -222,39 +256,45 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
     @instance_lock
     def run(self):
         logger.info("on shutdown server")
-        logger.debug("init shutdown server")
+
         thread = threading.Thread(target=self.exit)
         thread.start()
 
     @request_lock
     def exit(self):
-        # if SERVER_STATE.error:  # cancel all request if server error
+
         if SERVER_ERROR:  # cancel all request if server error
             return
+
         try:
             response = client.shutdown()
         except client.ServerOffline:
             set_offline()
             logger.debug("ServerOffline")
-            pass
+
         except Exception:
             logger.error("shutdown server", exc_info=True)
+
         else:
             set_offline()
-            # SERVER_STATE.reset()
             logger.debug("finish shutdown server")
 
 
 def start_server(func):
+    """start server"""
+
     def wrapper(*args, **kwargs):
         if SERVER_ONLINE:
             return func(*args, **kwargs)
+
         if SERVER_ERROR:
             logger.debug("ServerError")
             return None
+
         logger.debug(
             "SERVER_ONLINE : %s, SERVER_ERROR : %s", SERVER_ONLINE, SERVER_ERROR
         )
+
         sublime.active_window().run_command("pytools_runserver")
         return None
 
@@ -262,13 +302,21 @@ def start_server(func):
 
 
 def plugin_loaded():
+    """on plugin loaded
+
+    sublime definition for plugin_loaded event
+    """
+
     thread = threading.Thread(target=check_connection)
     thread.start()
     # TODO: HANDLE ON SETTINGS CHANGE --------------------------------------------
 
 
 class Event(sublime_plugin.ViewEventListener):
+    """Event handler"""
+
     def __init__(self, view):
+
         self.view = view
 
         self.completion = None
@@ -276,8 +324,7 @@ class Event(sublime_plugin.ViewEventListener):
         self.cached_completion = None
         self.temp_completion_src = ""
         self.cached_docstring = None
-        # self.temp_docstring_src = ""
-        self.temp_docstring_size = -1
+        self.temp_docstring_src = ""
 
     @staticmethod
     def build_completion(completions: "Iterable") -> "Iterator[Any, Any]":
@@ -293,6 +340,8 @@ class Event(sublime_plugin.ViewEventListener):
     @instance_lock
     @request_lock
     def fetch_completions(self, prefix, location):
+        """fetch completion process"""
+
         view = self.view
 
         start = 0
@@ -314,26 +363,32 @@ class Event(sublime_plugin.ViewEventListener):
                 work_dir = os.path.dirname(view.file_name())
                 change_workspace(work_dir)
                 result = client.fetch_completion(source, line, character)
+
             except client.ServerOffline:
                 set_offline()
                 logger.debug("ServerOffline")
                 return None
+
             else:
                 if result.error:
                     logger.info(result.error)
                     return None
-                self.temp_completion_src = source
-                self.cached_completion = (
+
+                self.completion = (
                     list(self.build_completion(result.results)),
                     sublime.INHIBIT_WORD_COMPLETIONS
                     | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
                 )
-                self.completion = self.cached_completion
+
+                # set cache
+                self.temp_completion_src = source
+                self.cached_completion = self.completion
 
         document.show_completions(view)
 
-    # @instance_lock
     def on_query_completions(self, prefix, locations):
+        """on_query_completion event"""
+
         logger.info("on query completions")
         view = self.view
         if all(
@@ -368,27 +423,23 @@ class Event(sublime_plugin.ViewEventListener):
 
         start = 0
         word_region = view.word(location)
+
         if view.substr(word_region).isidentifier():
             end = word_region.b  # select until end of word
-            logger.debug("keyword = %s", view.substr(word_region))
         else:
             return  # cancel request for non identifier
-        source_region = sublime.Region(start, end)
-        source = view.substr(source_region)
-        # logger.debug("source len = %s",source_region.size())
-        source_size = source_region.size()
 
+        source_region = sublime.Region(start, end)
+
+        source = view.substr(source_region)
         line, character = view.rowcol(end)  # get rowcol at end selection
 
-        content, link = None, None
+        content, link = None, None  # cache holder
 
-        # logger.debug("same source = %s", self.temp_docstring_src == source)
-        logger.debug("cached : %s, current : %s", self.temp_docstring_size , source_size)
-
-        if self.temp_docstring_size == source_size:
-        # if self.temp_docstring_src == source:
+        if self.temp_docstring_src == source:
             logger.debug("use cached docstring : %s", self.cached_docstring)
             content, link = self.cached_docstring
+
         else:
             try:
                 initialize()
@@ -399,29 +450,29 @@ class Event(sublime_plugin.ViewEventListener):
                     view.substr(source_region), line, character
                 )
                 logger.debug(result)
+
             except client.ServerOffline:
                 set_offline()
                 logger.debug("ServerOffline")
-                pass
+
             except Exception:
                 logger.error("fetch documentation", exc_info=True)
-            else:
-                if result.error:
-                    logger.debug("documentation error:\n%s", result.error)
-                    return
 
-                logger.debug("result = %s", result.results)
-                if not result.results:
+            else:
+                if result.error:  # any error
+                    return  # cancel
+
+                if not result.results:  # empty results
                     return  # cancel
 
                 content = result.results.get("html")
                 link = result.results.get("link")
 
-                self.temp_docstring_size = source_region.size()
-                # self.temp_docstring_src = source
+                # set cache
+                self.temp_docstring_src = source
                 self.cached_docstring = (content, link)
 
-        if content:
+        if content:  # any content
             document.show_popup(
                 view,
                 self.decorate(content),
@@ -429,8 +480,9 @@ class Event(sublime_plugin.ViewEventListener):
                 lambda _: document.open_link(view, link),
             )
 
-    # @instance_lock
     def on_hover(self, point, hover_zone):
+        """on_hover event"""
+
         logger.info("on hover")
         view = self.view
         if all(
@@ -453,23 +505,29 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
     @instance_lock
     def run(self, edit):
         logger.info("on format document")
+
         view = self.view
+
         if all([valid_source(view), feature_enabled("format_document", default=True)]):
 
             source = view.substr(sublime.Region(0, view.size()))
+
             try:
-                results = client.format_code(source)
+                result = client.format_code(source)
+                logger.debug(result)
+
             except client.ServerOffline:
                 set_offline()
                 logger.debug("ServerOffline")
-                pass
+
             except Exception:
                 logger.error("format document", exc_info=True)
+
             else:
-                if results.error:
+                if result.error:  # any error
                     return
-                logger.debug(results)
-                document.apply_changes(view, edit, results.results)
+
+                document.apply_changes(view, edit, result.results)
 
     def is_visible(self):
         return valid_source(self.view)
