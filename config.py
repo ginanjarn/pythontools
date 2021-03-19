@@ -24,7 +24,7 @@ class PytoolsSetAutocompleteCommand(sublime_plugin.TextCommand):
             value = settings.get(F_AUTOCOMPLETE, True)
             settings.set(F_AUTOCOMPLETE, not value)
 
-    def is_visible(self):
+    def is_enabled(self):
         return self.view.match_selector(0, "source.python")
 
     def is_checked(self):
@@ -35,10 +35,10 @@ class PytoolsSetAutocompleteCommand(sublime_plugin.TextCommand):
 class PytoolsSetDocumentationCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         with load_settings(save=True) as settings:
-            value = settings.get(F_AUTOCOMPLETE, True)
-            settings.set(F_AUTOCOMPLETE, not value)
+            value = settings.get(F_DOCUMENTATION, True)
+            settings.set(F_DOCUMENTATION, not value)
 
-    def is_visible(self):
+    def is_enabled(self):
         return self.view.match_selector(0, "source.python")
 
     def is_checked(self):
@@ -49,10 +49,10 @@ class PytoolsSetDocumentationCommand(sublime_plugin.TextCommand):
 class PytoolsSetDocumentformattingCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         with load_settings(save=True) as settings:
-            value = settings.get(F_AUTOCOMPLETE, True)
-            settings.set(F_AUTOCOMPLETE, not value)
+            value = settings.get(F_DOCUMENT_FORMATTING, True)
+            settings.set(F_DOCUMENT_FORMATTING, not value)
 
-    def is_visible(self):
+    def is_enabled(self):
         return self.view.match_selector(0, "source.python")
 
     def is_checked(self):
