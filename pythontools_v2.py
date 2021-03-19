@@ -317,27 +317,6 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
             INITIALIZED = False
 
 
-# def start_server(func):
-#     """start server"""
-
-#     def wrapper(*args, **kwargs):
-#         if SERVER_ONLINE:
-#             return func(*args, **kwargs)
-
-#         if SERVER_ERROR:
-#             logger.debug("ServerError")
-#             return None
-
-#         logger.debug(
-#             "SERVER_ONLINE : %s, SERVER_ERROR : %s", SERVER_ONLINE, SERVER_ERROR
-#         )
-
-#         sublime.active_window().run_command("pytools_runserver")
-#         return None
-
-#     return wrapper
-
-
 def plugin_loaded():
     """on plugin loaded
 
@@ -373,7 +352,6 @@ class Event(sublime_plugin.ViewEventListener):
                 completion["label"],
             )
 
-    # @start_server
     @instance_lock
     @request_lock
     def fetch_completions(self, prefix, location):
@@ -433,7 +411,6 @@ class Event(sublime_plugin.ViewEventListener):
                 valid_source(view),
                 valid_attribute(view, locations[0]),
                 feature_enabled(F_AUTOCOMPLETE),
-                # feature_available(F_AUTOCOMPLETE),
             ]
         ):
             if self.completion:
@@ -458,7 +435,6 @@ class Event(sublime_plugin.ViewEventListener):
         """decorate popup content"""
         return '<div style="padding: .5em">%s</div>' % content
 
-    # @start_server
     @instance_lock
     @request_lock
     def fetch_documentation(self, location):
@@ -536,7 +512,6 @@ class Event(sublime_plugin.ViewEventListener):
                 valid_source(view),
                 valid_attribute(view, point),
                 feature_enabled(F_DOCUMENTATION),
-                # feature_available(F_DOCUMENTATION),
                 hover_zone == sublime.HOVER_TEXT,
             ]
         ):
@@ -554,20 +529,13 @@ class Event(sublime_plugin.ViewEventListener):
 class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
 
-    # @start_server
     @instance_lock
     def run(self, edit):
         logger.info("on format document")
 
         view = self.view
 
-        if all(
-            [
-                valid_source(view),
-                feature_enabled(F_DOCUMENT_FORMATTING),
-                # feature_available(F_DOCUMENT_FORMATTING),
-            ]
-        ):
+        if all([valid_source(view), feature_enabled(F_DOCUMENT_FORMATTING),]):
             if not SERVER_ONLINE:
                 view.window().run_command("pytools_runserver")
                 return
