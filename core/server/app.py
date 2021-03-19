@@ -191,9 +191,12 @@ class Server:
                 result = callback(content)
             except Exception:
                 logger.exception("internal error")
-                result = (
-                    '{"jsonrpc":"2.0","id":null,"'
-                    '"error":{"code":1,"message":"invalid request"}}'
+                result = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": 1, "message": "invalid request"},
+                    }
                 )
             logger.debug(result)
             conn.sendall(create_rpc_message(result))
