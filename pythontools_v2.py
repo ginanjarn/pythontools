@@ -66,12 +66,15 @@ F_AUTOCOMPLETE = "autocomplete"
 F_DOCUMENTATION = "documentation"
 F_DOCUMENT_FORMATTING = "document_formatting"
 
+# All features enabled
+ALL_ENABLED = True
+
 
 def feature_enabled(feature_name: str, *, default=True) -> bool:
     """check if feature enabled on settings"""
 
     sublime_settings = sublime.load_settings(SETTINGS_BASENAME)
-    return sublime_settings.get(feature_name, default)
+    return sublime_settings.get(feature_name, default) and ALL_ENABLED
 
 
 class ServerCapability(dict):
@@ -236,9 +239,12 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             if config:
                 self.window.run_command("pytools_python_interpreter")
 
-            # else:
-            # SETTINGS.disable_all()
             # TODO: HANDLE ON IGNORE ------------------------------------------
+            else:
+                global ALL_ENABLED
+                ALL_ENABLED = False
+            # -----------------------------------------------------------------
+
             return
 
         thread = threading.Thread(target=self.run_server, args=(python_path,))
