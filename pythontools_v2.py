@@ -61,9 +61,10 @@ def request_lock(func):
 
 SETTINGS_BASENAME = "Pytools.sublime-settings"
 
-# Features name
+# Settings name
 F_AUTOCOMPLETE = "autocomplete"
 F_DOCUMENTATION = "documentation"
+W_ABSOLUTE_IMPORT = "absolute_import"
 F_DOCUMENT_FORMATTING = "document_formatting"
 
 # All features enabled
@@ -334,6 +335,19 @@ def plugin_loaded():
     # TODO: HANDLE ON SETTINGS CHANGE --------------------------------------------
 
 
+def absolute_folder(view):
+    matches = [
+        folder
+        for folder in view.window().folders()
+        if view.file_name().startswith(folder)
+    ]
+    if any(matches):
+        # return the longest matched path
+        return max(matches)
+    else:
+        return file_name
+
+
 class Event(sublime_plugin.ViewEventListener):
     """Event handler"""
 
@@ -381,8 +395,14 @@ class Event(sublime_plugin.ViewEventListener):
         else:
             try:
                 initialize()
-                work_dir = os.path.dirname(view.file_name())
+
+                if feature_enabled(W_ABSOLUTE_IMPORT):
+                    work_dir = absolute_folder(view)
+                else:
+                    work_dir = os.path.dirname(view.file_name())
+
                 change_workspace(work_dir)
+
                 result = client.fetch_completion(source, line, character)
 
             except client.ServerOffline:
@@ -470,7 +490,12 @@ class Event(sublime_plugin.ViewEventListener):
         else:
             try:
                 initialize()
-                work_dir = os.path.dirname(view.file_name())
+
+                if feature_enabled(W_ABSOLUTE_IMPORT):
+                    work_dir = absolute_folder(view)
+                else:
+                    work_dir = os.path.dirname(view.file_name())
+
                 change_workspace(work_dir)
 
                 result = client.fetch_documentation(
