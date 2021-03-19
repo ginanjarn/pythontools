@@ -220,7 +220,6 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     """Run server command"""
 
-    @instance_lock
     def run(self):
         logger.info("on run server")
 
@@ -250,6 +249,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         thread = threading.Thread(target=self.run_server, args=(python_path,))
         thread.start()
 
+    @instance_lock
     def run_server(self, python_path):
         """run server thread"""
 
