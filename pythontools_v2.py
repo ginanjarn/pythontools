@@ -68,7 +68,7 @@ W_ABSOLUTE_IMPORT = "absolute_import"
 F_DOCUMENT_FORMATTING = "document_formatting"
 
 # All features enabled
-ALL_ENABLED = True
+ALL_ENABLED = False
 
 
 def feature_enabled(feature_name: str, *, default=True) -> bool:
@@ -284,7 +284,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             self.window.status_message("Server ready")
 
             # wait server activated
-            time.sleep(0.5)
+            time.sleep(1.0)
 
             # initialize server
             initialize()
@@ -329,6 +329,10 @@ def plugin_loaded():
 
     sublime definition for plugin_loaded event
     """
+
+    # Enable default on loaded
+    global ALL_ENABLED
+    ALL_ENABLED = True
 
     thread = threading.Thread(target=initialize)
     thread.start()
