@@ -251,6 +251,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         thread.start()
 
     @instance_lock
+    @request_lock
     def run_server(self, python_path):
         """run server thread"""
 
