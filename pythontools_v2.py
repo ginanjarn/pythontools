@@ -66,6 +66,7 @@ F_AUTOCOMPLETE = "autocomplete"
 F_DOCUMENTATION = "documentation"
 W_ABSOLUTE_IMPORT = "absolute_import"
 F_DOCUMENT_FORMATTING = "document_formatting"
+F_DIAGNOSTIC = "diagnostic"
 
 # All features enabled
 ALL_ENABLED = False
@@ -162,6 +163,7 @@ def initialize():
         SERVER_CAPABILITY[F_DOCUMENT_FORMATTING] = result.results.get(
             "document_format", False
         )
+        SERVER_CAPABILITY[F_DIAGNOSTIC] = result.results.get("diagnostic", False)
         logger.debug(SERVER_CAPABILITY)
 
     finally:
@@ -351,6 +353,10 @@ def absolute_folder(view):
         return max(matches)
     else:
         return file_name
+
+
+# Diagnostic data holder
+DIAGNOSTICS = []
 
 
 class Event(sublime_plugin.ViewEventListener):
@@ -561,6 +567,22 @@ class Event(sublime_plugin.ViewEventListener):
             thread = threading.Thread(target=self.fetch_documentation, args=(point,))
             thread.start()
 
+        elif all(
+            [
+                valid_source(view),
+                valid_attribute(view, point),
+                feature_enabled(F_DIAGNOSTIC),
+                hover_zone == sublime.HOVER_GUTTER,
+                DIAGNOSTICS,
+            ]
+        ):
+            content = document.diagnostic_message(DIAGNOSTICS, view, point)
+            if content:  # any content
+                document.show_popup(view, self.decorate(content), point, callback=None)
+
+    def on_pre_save_async(self) -> None:
+        self.view.run_command("pytools_clear_diagnostic")
+
 
 class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
@@ -600,6 +622,61 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
 
     def is_visible(self):
         return valid_source(self.view)
+
+
+class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
+    """Diagnostic command"""
+
+    def run(self, edit, path=None):
+        logger.info("on diagnostic")
+
+        view = self.view
+        if all([valid_source(view), feature_enabled(F_DIAGNOSTIC),]):
+            if not path:
+                path = view.file_name()
+
+            if not any([os.path.isdir(path), os.path.isfile(path)]):
+                return
+
+            thread = threading.Thread(target=self.diagnose, args=(path,))
+            thread.start()
+
+    @instance_lock
+    def diagnose(self, path):
+        try:
+            result = client.analyzer.get_diagnostic(path)
+        except client.ServerOffline:
+            logger.debug("ServerOffline")
+        else:
+            if result.error:
+                logger.debug(result.error)
+                return
+
+            global DIAGNOSTICS
+
+            for diagnostic in result.results:
+                DIAGNOSTICS.append(document.Mark.from_rpc(self.view, diagnostic))
+
+            logger.debug(DIAGNOSTICS)
+
+            document.apply_diagnostics(self.view, DIAGNOSTICS)
+
+
+class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
+    """Diagnostic command"""
+
+    def run(self, edit):
+        logger.info("on clear diagnostic")
+
+        for severity in [
+            document.ERROR,
+            document.WARNING,
+            document.INFO,
+            document.HINT,
+        ]:
+            document.erase_regions(self.view, document.KEY_FORMAT % severity)
+
+        DIAGNOSTICS.clear()
 
 
 class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):
