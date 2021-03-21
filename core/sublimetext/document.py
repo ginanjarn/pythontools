@@ -218,10 +218,8 @@ def apply_diagnostics(
     view: sublime.View, marks: "Iterable[Mark]",
 ):
 
-    sorted_mark = sorted(marks, key=lambda mark: mark.severity)
-
     for severity in [HINT, INFO, WARNING, ERROR]:
-        filtered_mark = filter(lambda mark: mark.severity == severity, sorted_mark)
+        filtered_mark = filter(lambda mark: mark.severity == severity, marks)
         # logger.debug(list(filtered_mark))
         regions = map(lambda mark: mark.region, filtered_mark)
         # logger.debug(list(regions))

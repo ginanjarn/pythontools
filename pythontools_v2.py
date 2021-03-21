@@ -11,7 +11,6 @@ from .core.sublimetext import client
 from .core.sublimetext import document
 from .core.sublimetext import settings as python_settings
 
-# from .core.sublimetext import ServerOffline, ServerError, InvalidInput
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -90,12 +89,6 @@ def server_capable(feature_name: str, *, default=False) -> bool:
     """check if server capable perform feature"""
 
     return SERVER_CAPABILITY.get(feature_name, default)
-
-
-def feature_available(feature_name: str) -> bool:
-    """available if feature enabled and server capable"""
-
-    return feature_enabled(feature_name) and server_capable(feature_name)
 
 
 SERVER_ONLINE = False
@@ -403,38 +396,37 @@ class Event(sublime_plugin.ViewEventListener):
         if self.temp_completion_src == source:
             self.completion = self.cached_completion
             return None
+
+        try:
+            initialize()
+
+            if feature_enabled(W_ABSOLUTE_IMPORT):
+                work_dir = absolute_folder(view)
+            else:
+                work_dir = os.path.dirname(view.file_name())
+
+            change_workspace(work_dir)
+
+            result = client.fetch_completion(source, line, character)
+
+        except client.ServerOffline:
+            set_offline()
+            logger.debug("ServerOffline")
+            return None
+
         else:
-            try:
-                initialize()
-
-                if feature_enabled(W_ABSOLUTE_IMPORT):
-                    work_dir = absolute_folder(view)
-                else:
-                    work_dir = os.path.dirname(view.file_name())
-
-                change_workspace(work_dir)
-
-                result = client.fetch_completion(source, line, character)
-
-            except client.ServerOffline:
-                set_offline()
-                logger.debug("ServerOffline")
+            if result.error:
+                logger.info(result.error)
                 return None
 
-            else:
-                if result.error:
-                    logger.info(result.error)
-                    return None
+            self.completion = (
+                list(self.build_completion(result.results)),
+                sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
+            )
 
-                self.completion = (
-                    list(self.build_completion(result.results)),
-                    sublime.INHIBIT_WORD_COMPLETIONS
-                    | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
-                )
-
-                # set cache
-                self.temp_completion_src = source
-                self.cached_completion = self.completion
+            # set cache
+            self.temp_completion_src = source
+            self.cached_completion = self.completion
 
         document.show_completions(view)
 
