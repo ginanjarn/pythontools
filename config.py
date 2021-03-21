@@ -8,6 +8,7 @@ SETTINGS_BASENAME = "Pytools.sublime-settings"
 F_AUTOCOMPLETE = "autocomplete"
 F_DOCUMENTATION = "documentation"
 F_DOCUMENT_FORMATTING = "document_formatting"
+F_DIAGNOSTIC = "diagnostic"
 W_ABSOLUTE_IMPORT = "absolute_import"
 
 
@@ -59,6 +60,20 @@ class PytoolsSetDocumentformattingCommand(sublime_plugin.TextCommand):
     def is_checked(self):
         with load_settings() as settings:
             return settings.get(F_DOCUMENT_FORMATTING, True)
+
+
+class PytoolsSetDiagnosticCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        with load_settings(save=True) as settings:
+            value = settings.get(F_DIAGNOSTIC, True)
+            settings.set(F_DIAGNOSTIC, not value)
+
+    def is_enabled(self):
+        return self.view.match_selector(0, "source.python")
+
+    def is_checked(self):
+        with load_settings() as settings:
+            return settings.get(F_DIAGNOSTIC, True)
 
 
 class PytoolsSetAbsoluteimportCommand(sublime_plugin.TextCommand):
