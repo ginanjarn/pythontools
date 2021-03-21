@@ -336,16 +336,17 @@ def plugin_loaded():
 
 
 def absolute_folder(view):
+
+    file_name = view.file_name()
     matches = [
-        folder
-        for folder in view.window().folders()
-        if view.file_name().startswith(folder)
+        folder for folder in view.window().folders() if file_name.startswith(folder)
     ]
+
     if any(matches):
         # return the longest matched path
         return max(matches)
-    else:
-        return file_name
+
+    return file_name
 
 
 # Diagnostic data holder
