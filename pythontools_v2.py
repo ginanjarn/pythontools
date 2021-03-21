@@ -581,6 +581,7 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
 
     @instance_lock
+    @request_lock
     def run(self, edit):
         logger.info("on format document")
 
@@ -635,6 +636,7 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
             thread.start()
 
     @instance_lock
+    @request_lock
     def diagnose(self, path):
         try:
             result = client.analyzer.get_diagnostic(path)
@@ -661,15 +663,23 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         logger.info("on clear diagnostic")
 
+        view = self.view
+
         for severity in [
             document.ERROR,
             document.WARNING,
             document.INFO,
             document.HINT,
         ]:
-            document.erase_regions(self.view, document.KEY_FORMAT % severity)
+            document.erase_regions(view, document.KEY_FORMAT % severity)
 
-        DIAGNOSTICS.clear()
+        global DIAGNOSTICS
+
+        # clear diagnostic on current view only
+        def keeped_criteria(mark: document.Mark):
+            return mark.view_id != view.id()
+
+        DIAGNOSTICS = list(filter(keeped_criteria, DIAGNOSTICS))
 
 
 class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):
@@ -680,3 +690,4 @@ class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):
             "SERVER_ONLINE : %s, SERVER_ERROR : %s, SERVER_CAPABILITY : %s"
             % (SERVER_ONLINE, SERVER_ERROR, SERVER_CAPABILITY)
         )
+        print("DIAGNOSTICS : %s", DIAGNOSTICS)

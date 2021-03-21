@@ -155,14 +155,18 @@ HINT = 4
 class Mark:
     """diagnostic mark item"""
 
-    def __init__(self, severity, region, message):
+    def __init__(self, view_id, severity, region, message):
+        self.view_id = view_id
         self.severity = severity
         self.region = region
         self.message = message
 
     def __repr__(self):
-        return "severity : {severity}, region : {region}, message : {message}".format(
-            severity=self.severity, region=self.region, message=self.message
+        return "view_id : {view_id}, severity : {severity}, region : {region}, message : {message}".format(
+            view_id=self.view_id,
+            severity=self.severity,
+            region=self.region,
+            message=self.message,
         )
 
     @classmethod
@@ -175,7 +179,7 @@ class Mark:
         except KeyError:
             return None
         else:
-            return cls(severity, region, msg)
+            return cls(view.id(), severity, region, msg)
 
 
 SCOPE = {1: "Invalid", 2: "Invalid", 3: "Comment", 4: "Comment"}
@@ -219,7 +223,11 @@ def apply_diagnostics(
 ):
 
     for severity in [HINT, INFO, WARNING, ERROR]:
-        filtered_mark = filter(lambda mark: mark.severity == severity, marks)
+
+        def filter_spect(mark: Mark):
+            return mark.severity == severity and mark.view_id == view.id()
+
+        filtered_mark = filter(filter_spect, marks)
         # logger.debug(list(filtered_mark))
         regions = map(lambda mark: mark.region, filtered_mark)
         # logger.debug(list(regions))
@@ -237,6 +245,9 @@ def diagnostic_message(diagnostics: "List[Mark]", view: sublime.View, pos: int):
         # line: sublime.Region = line
         return line.intersects(mark.region)
 
-    intersects = filter(intersecting, diagnostics)
+    view_filtered_diagnostics = filter(
+        lambda mark: mark.view_id == view.id(), diagnostics
+    )
+    intersects = filter(intersecting, view_filtered_diagnostics)
     messages = map(lambda mark: mark.message, intersects)
     return "<br>".join(messages)
