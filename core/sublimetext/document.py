@@ -179,7 +179,15 @@ class Mark:
 
 
 SCOPE = {1: "Invalid", 2: "Invalid", 3: "Comment", 4: "Comment"}
-ICON = {1: "circle", 2: "dot", 3: "bookmark", 4: "bookmark"}
+
+ICON_PREFIX = "Packages/pythontools/icons/%s"
+ICON = {
+    1: ICON_PREFIX % "error.png",
+    2: ICON_PREFIX % "warning.png",
+    3: ICON_PREFIX % "info.png",
+    4: ICON_PREFIX % "info.png",
+}
+
 FLAGS = {
     1: sublime.DRAW_NO_OUTLINE,
     2: sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublime.DRAW_SOLID_UNDERLINE,
