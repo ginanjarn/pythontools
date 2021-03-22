@@ -240,14 +240,42 @@ def apply_diagnostics(
 
 
 def diagnostic_message(diagnostics: "List[Mark]", view: sublime.View, pos: int):
-    def intersecting(mark: Mark):
-        line = view.line(pos)
-        # line: sublime.Region = line
-        return line.intersects(mark.region)
+    # def intersecting(mark: Mark):
+    #     line = view.line(pos)
+    #     # line: sublime.Region = line
+    #     return line.intersects(mark.region)
 
-    view_filtered_diagnostics = filter(
-        lambda mark: mark.view_id == view.id(), diagnostics
-    )
-    intersects = filter(intersecting, view_filtered_diagnostics)
-    messages = map(lambda mark: mark.message, intersects)
-    return "<br>".join(messages)
+    # view_filtered_diagnostics = filter(
+    #     lambda mark: mark.view_id == view.id(), diagnostics
+    # )
+    # intersects = filter(intersecting, view_filtered_diagnostics)
+    # messages = map(lambda mark: mark.message, intersects)
+    # return "<br>".join(messages)
+
+    cursor_row, _ = view.rowcol(pos)
+
+    def sort_key(mark: Mark):
+        return mark.region.a
+
+    def mgs_gen():
+
+        for severity in [1, 2, 3, 4]:
+
+            marks = [
+                mark
+                for mark in diagnostics
+                if mark.severity == severity and mark.view_id == view.id()
+            ]
+            sorted_marks = sorted(marks, key=sort_key)
+
+            regions = view.get_regions(KEY_FORMAT % severity)
+
+            for index, region in enumerate(regions):
+                row, _ = view.rowcol(region.a)
+
+                if cursor_row == row:
+                    yield sorted_marks[index].message
+
+            yield
+
+    return "<br>".join([message for message in list(mgs_gen()) if message])
