@@ -239,32 +239,20 @@ def apply_diagnostics(
         )
 
 
-def diagnostic_message(diagnostics: "List[Mark]", view: sublime.View, pos: int):
-    
-    cursor_row, _ = view.rowcol(pos)
+def diagnostic_message(
+    diagnostics: "List[Mark]", view: sublime.View
+) -> "Dict[int, str]":
 
-    def sort_key(mark: Mark):
-        return mark.region.a
+    temp_message = {}
+    for mark in diagnostics:
+        # mark: Mark = mark
 
-    def mgs_gen():
+        row, _ = view.rowcol(mark.region.a)
+        message = mark.message
 
-        for severity in [ERROR, WARNING, INFO, HINT]:
+        if row in temp_message:
+            temp_message[row] = "<br>".join([temp_message[row], message])
+        else:
+            temp_message[row] = message
 
-            marks = [
-                mark
-                for mark in diagnostics
-                if mark.severity == severity and mark.view_id == view.id()
-            ]
-            sorted_marks = sorted(marks, key=sort_key)
-
-            regions = view.get_regions(KEY_FORMAT % severity)
-
-            for index, region in enumerate(regions):
-                row, _ = view.rowcol(region.a)
-
-                if cursor_row == row:
-                    yield sorted_marks[index].message
-
-            yield
-
-    return "<br>".join([message for message in list(mgs_gen()) if message])
+    return temp_message

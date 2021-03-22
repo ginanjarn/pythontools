@@ -373,6 +373,7 @@ class Event(sublime_plugin.ViewEventListener):
         self.temp_completion_src = ""
         self.cached_docstring = None
         self.temp_docstring_src = ""
+        self.cached_diagnostic = None
 
     @staticmethod
     def build_completion(completions: "Iterable") -> "Iterator[Any, Any]":
@@ -576,11 +577,31 @@ class Event(sublime_plugin.ViewEventListener):
                 DIAGNOSTICS,
             ]
         ):
-            content = document.diagnostic_message(DIAGNOSTICS, view, point)
+            row, _ = view.rowcol(point)
+            if self.cached_diagnostic:
+                content = self.cached_diagnostic.get(row)
+                logger.debug("cached : %s", content)
+            else:
+                diagnostic_message = document.diagnostic_message(DIAGNOSTICS, view)
+                self.cached_diagnostic = diagnostic_message
+                content = self.cached_diagnostic.get(row)
+                logger.debug("loaded : %s", content)
+
             if content:  # any content
                 document.show_popup(view, self.decorate(content), point, callback=None)
 
+    def clear_cached_diagnostic(self):
+        if self.cached_diagnostic:
+            self.cached_diagnostic = None
+
+    def on_modified(self):
+        self.clear_cached_diagnostic()
+
+    def on_activated(self):
+        self.clear_cached_diagnostic()
+
     def on_pre_save_async(self) -> None:
+        self.clear_cached_diagnostic()
         self.view.run_command("pytools_clear_diagnostic")
 
 
@@ -645,6 +666,7 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
     @instance_lock
     @request_lock
     def diagnose(self, path):
+        logger.debug("on diagnostic thread")
         try:
             result = client.analyzer.get_diagnostic(path)
         except client.ServerOffline:
