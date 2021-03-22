@@ -213,20 +213,6 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
             logger.error("set interpreter", exc_info=True)
 
 
-RUN_SERVER_LOCK = threading.Lock()
-
-
-def run_server_lock(func):
-    def wrapper(*args, **kwargs):
-        if RUN_SERVER_LOCK.locked():
-            logger.debug("in running")
-            return None
-        with RUN_SERVER_LOCK:
-            return func(*args, **kwargs)
-
-    return wrapper
-
-
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     """Run server command"""
 
@@ -260,7 +246,6 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         thread.start()
 
     @instance_lock
-    @run_server_lock
     @request_lock
     def run_server(self, python_path):
         """run server thread"""
@@ -281,7 +266,11 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         try:
             logger.debug("running server")
             logger.debug("%s, %s, %s", server_path, server_module, activate_path)
-            client.run_server(server_path, server_module, activate_path=activate_path)
+            request_lock(
+                client.run_server(
+                    server_path, server_module, activate_path=activate_path
+                )
+            )
 
         except client.ServerError:
             logger.debug("server error")
@@ -333,7 +322,7 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
         finally:
             global INITIALIZED
             global SERVER_CAPABILITY
-            
+
             INITIALIZED = False
             SERVER_CAPABILITY.clear()
 
