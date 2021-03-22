@@ -317,7 +317,10 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
 
         finally:
             global INITIALIZED
+            global SERVER_CAPABILITY
+            
             INITIALIZED = False
+            SERVER_CAPABILITY.clear()
 
 
 def plugin_loaded():
