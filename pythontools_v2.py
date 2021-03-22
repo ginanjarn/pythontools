@@ -213,6 +213,20 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
             logger.error("set interpreter", exc_info=True)
 
 
+RUN_SERVER_LOCK = threading.Lock()
+
+
+def run_server_lock(func):
+    def wrapper(*args, **kwargs):
+        if RUN_SERVER_LOCK.locked():
+            logger.debug("in running")
+            return None
+        with RUN_SERVER_LOCK:
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     """Run server command"""
 
@@ -246,6 +260,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         thread.start()
 
     @instance_lock
+    @run_server_lock
     @request_lock
     def run_server(self, python_path):
         """run server thread"""
