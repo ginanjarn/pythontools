@@ -222,7 +222,7 @@ def apply_diagnostics(
     view: sublime.View, marks: "Iterable[Mark]",
 ):
 
-    for severity in [HINT, INFO, WARNING, ERROR]:
+    for severity in [ERROR, WARNING, INFO, HINT]:
 
         def filter_spect(mark: Mark):
             return mark.severity == severity and mark.view_id == view.id()
@@ -240,18 +240,7 @@ def apply_diagnostics(
 
 
 def diagnostic_message(diagnostics: "List[Mark]", view: sublime.View, pos: int):
-    # def intersecting(mark: Mark):
-    #     line = view.line(pos)
-    #     # line: sublime.Region = line
-    #     return line.intersects(mark.region)
-
-    # view_filtered_diagnostics = filter(
-    #     lambda mark: mark.view_id == view.id(), diagnostics
-    # )
-    # intersects = filter(intersecting, view_filtered_diagnostics)
-    # messages = map(lambda mark: mark.message, intersects)
-    # return "<br>".join(messages)
-
+    
     cursor_row, _ = view.rowcol(pos)
 
     def sort_key(mark: Mark):
@@ -259,7 +248,7 @@ def diagnostic_message(diagnostics: "List[Mark]", view: sublime.View, pos: int):
 
     def mgs_gen():
 
-        for severity in [1, 2, 3, 4]:
+        for severity in [ERROR, WARNING, INFO, HINT]:
 
             marks = [
                 mark
