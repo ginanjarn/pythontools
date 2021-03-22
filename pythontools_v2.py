@@ -9,7 +9,7 @@ import os
 import time
 from .core.sublimetext import client
 from .core.sublimetext import document
-from .core.sublimetext import settings as python_settings
+from .core.sublimetext import interpreter
 
 
 logger = logging.getLogger(__name__)
@@ -208,7 +208,7 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
 
     def run(self):
         try:
-            python_settings.set_interpreter(self.window)
+            interpreter.set_interpreter(self.window)
         except Exception:
             logger.error("set interpreter", exc_info=True)
 
@@ -250,8 +250,8 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     def run_server(self, python_path):
         """run server thread"""
 
-        activate_path = python_settings.find_activate(python_path)
-        env_path = python_settings.find_environment(python_path)
+        activate_path = interpreter.find_activate(python_path)
+        env_path = interpreter.find_environment(python_path)
 
         server_path = os.path.dirname(
             os.path.abspath(__file__)
