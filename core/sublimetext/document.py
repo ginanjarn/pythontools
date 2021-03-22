@@ -90,8 +90,8 @@ class Update:
         new_text = update["newText"]
 
         logger.debug("%s, %s, %s, %s", start_line, start_column, end_line, end_column)
-        start = view.text_point(start_line - 1, start_column)
-        end = view.text_point(end_line - 1, end_column)
+        start = view.text_point(start_line, start_column)
+        end = view.text_point(end_line, end_column)
         region = sublime.Region(start, end)
         return cls(region, new_text)
 

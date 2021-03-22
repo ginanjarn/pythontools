@@ -57,8 +57,8 @@ try:
             self.blocks.append(
                 {
                     "range": {
-                        "start": {"line": start_line, "character": start_character},
-                        "end": {"line": end_line, "character": end_character},
+                        "start": {"line": start_line - 1, "character": start_character},
+                        "end": {"line": end_line - 1, "character": end_character},
                     },
                     "newText": [],
                 }
