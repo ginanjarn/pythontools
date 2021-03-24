@@ -1,0 +1,21 @@
+[
+	{
+		"caption":"-",
+		"id":"pythontools"
+	},
+	{
+		"caption": "Pythontools",
+		"id":"pythontools",
+		"children":[
+			{
+				"caption": "Rename module",
+				"command": "pytools_rename",
+				"args":{
+					"paths":[0]
+				},
+				"id": "pythontools",
+			}
+		]
+	}
+	
+]
