@@ -242,15 +242,20 @@ def server_subproces(
                 # env=env,
             )
 
-        _, serr = server_proc.communicate()
-        err_message = "\n".join(serr.decode().splitlines())
+        if server_proc.poll():
+            _, serr = server_proc.communicate()
+            err_message = "\n".join(serr.decode().splitlines())
 
-        if server_proc.returncode == 123:
-            raise PortInUse(err_message)
+            if server_proc.returncode == 123:
+                raise PortInUse(err_message)
 
-        if server_proc.returncode == 1:
-            logger.debug("server error:\n%s", err_message)
-            raise ServerError(err_message)
+            if server_proc.returncode == 1:
+                logger.debug("server error:\n%s", err_message)
+                raise ServerError(err_message)
+
+        else:
+            # pool() return None if child process running
+            logger.debug("server activated")
 
     except PortInUse:
         logger.debug("OSError, port in use")
