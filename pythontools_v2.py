@@ -66,6 +66,7 @@ F_DOCUMENTATION = "documentation"
 W_ABSOLUTE_IMPORT = "absolute_import"
 F_DOCUMENT_FORMATTING = "document_formatting"
 F_DIAGNOSTIC = "diagnostic"
+F_RENAME = "rename"
 
 # All features enabled
 ALL_ENABLED = False
@@ -157,6 +158,7 @@ def initialize():
             "document_format", False
         )
         SERVER_CAPABILITY[F_DIAGNOSTIC] = result.results.get("diagnostic", False)
+        SERVER_CAPABILITY[F_RENAME] = result.results.get("rename", False)
         logger.debug(SERVER_CAPABILITY)
 
     finally:
@@ -713,6 +715,116 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
             return mark.view_id != view.id()
 
         DIAGNOSTICS = list(filter(keeped_criteria, DIAGNOSTICS))
+
+
+class PytoolsRenameCommand(sublime_plugin.TextCommand):
+    """Diagnostic command"""
+
+    def run(self, edit, paths: "List[str]" = None):
+        logger.info("on rename")
+
+        if all([feature_enabled(F_RENAME)]):
+
+            view = self.view
+            self.path = paths[0] if paths else None
+            rename_module = True if self.path else False
+
+            if rename_module:
+                # rename module
+
+                self.offset = None
+                name, ext = os.path.splitext(os.path.basename(path))
+                old_name = name
+
+                if ext not in [".py", ".pyi", ".pyc"]:
+                    logger.debug("not python file")
+                    return
+
+            else:
+                # rename attribute
+
+                view.run_command("save")  # write buffer
+                selection = view.sel()[0]
+
+                if not all([valid_source(view), valid_attribute(view, selection.a)]):
+                    logger.debug("invalid view and attribute")
+                    return
+
+                self.path = view.file_name()
+
+                if selection.size() != view.word(selection.a).size():
+                    logger.debug(
+                        "no selected attribute, found : %s", view.substr(selection)
+                    )
+                    return
+
+                self.offset = selection.a
+                old_name = view.substr(selection)
+
+            if not server_capable(F_RENAME):
+                return
+
+            window = view.window()
+            document.show_input_panel(
+                window,
+                "New name",
+                on_done=self.on_input_name_done,
+                initial_text=old_name,
+            )
+
+    def on_input_name_done(self, name):
+        thread = threading.Thread(
+            target=self.rename_thread, args=(self.path, self.offset, name)
+        )
+        thread.start()
+
+    @staticmethod
+    @instance_lock
+    @request_lock
+    def rename_thread(path, offset, name):
+        try:
+            result = client.rename(file_path=path, offset=offset, new_name=name)
+
+        except client.ServerOffline:
+            logger.debug("ServerOffline")
+
+        except Exception:
+            logger.error("rename error", exc_info=True)
+
+        else:
+            if result.error:
+                logger.debug(result.error)
+
+            else:
+                # apply changes
+                logger.debug(result.results)
+                PytoolsRenameCommand.apply_renames(result.results)
+
+    @staticmethod
+    def apply_renames(changes: "Dict[str, Any]"):
+        window = sublime.active_window()
+        for change in changes:
+            try:
+                if change["type"] == "change":
+                    view = window.open_file(change["file_name"])
+                    view.run_command(
+                        "pytools_apply_rpc_change", args={"changes": change["changes"]}
+                    )
+
+                elif change["type"] == "rename":
+                    old_name = change["changes"]["old_name"]
+                    new_name = change["changes"]["new_name"]
+                    os.rename(old_name, new_name)
+
+            except (KeyError, FileNotFoundError):
+                logger.error("error apply_renames", exc_info=True)
+
+
+class PytoolsApplyRpcChangeCommand(sublime_plugin.TextCommand):
+    """Diagnostic command"""
+
+    def run(self, edit, changes):
+        document.apply_changes(self.view, edit, changes)
 
 
 class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):

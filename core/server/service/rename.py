@@ -19,9 +19,10 @@ logger.addHandler(sh)
 try:
     from rope.base import project, libutils
     from rope.base.change import ChangeSet, MoveResource, ChangeContents
+    from rope.base.exceptions import RefactoringError
     from rope.refactor.rename import Rename
 
-    class RenameChanges(object):
+    class RenameChanges(ChangeSet):
         """rename changes object"""
 
     def get_removed(line: str) -> Tuple[int, int]:
@@ -180,14 +181,19 @@ try:
         Raises:
             RefactoringError
         """
-        project_manager = project.Project(project_path)
-        file_resource = libutils.path_to_resource(project_manager, resource_path)
+        try:
+            project_manager = project.Project(project_path)
+            file_resource = libutils.path_to_resource(project_manager, resource_path)
 
-        rename_task = Rename(project_manager, file_resource, offset)
-        changes = rename_task.get_changes(new_name)
+            rename_task = Rename(project_manager, file_resource, offset)
+            changes = rename_task.get_changes(new_name)
 
-        project_manager.close()
-        return RenameChanges(changes)
+            project_manager.close()
+            # return RenameChanges(changes)
+            return changes
+
+        except RefactoringError as err:
+            raise ValueError(err) from err
 
 
 except ImportError:
