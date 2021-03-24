@@ -654,6 +654,10 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
         view = self.view
         if all([valid_source(view), feature_enabled(F_DIAGNOSTIC),]):
+
+            if not server_capable(F_DIAGNOSTIC):
+                return
+
             if not path:
                 path = view.file_name()
 
