@@ -747,7 +747,7 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
                 # rename module
 
                 self.offset = None
-                name, ext = os.path.splitext(os.path.basename(path))
+                name, ext = os.path.splitext(os.path.basename(self.path))
                 old_name = name
 
                 if ext not in [".py", ".pyi", ".pyc"]:
