@@ -291,7 +291,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
 
 class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
-    
+
     """Shutdown command"""
 
     @instance_lock
@@ -609,8 +609,8 @@ class Event(sublime_plugin.ViewEventListener):
 class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
 
-    @instance_lock
-    @request_lock
+    # @instance_lock
+    # @request_lock
     def run(self, edit):
         logger.info("on format document")
 
@@ -626,22 +626,53 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
 
             source = view.substr(sublime.Region(0, view.size()))
 
-            try:
-                result = client.format_code(source)
-                logger.debug(result)
+            # try:
+            #     result = client.format_code(source)
+            #     logger.debug(result)
 
-            except client.ServerOffline:
-                set_offline()
-                logger.debug("ServerOffline")
+            # except client.ServerOffline:
+            #     set_offline()
+            #     logger.debug("ServerOffline")
 
-            except Exception:
-                logger.error("format document", exc_info=True)
+            # except Exception:
+            #     logger.error("format document", exc_info=True)
 
-            else:
-                if result.error:  # any error
-                    return
+            # else:
+            #     if result.error:  # any error
+            #         return
 
-                document.apply_changes(view, edit, result.results)
+            #     document.apply_changes(view, edit, result.results)
+
+            thread = threading.Thread(
+                target=self.formatting_task, args=(view.file_name(), source)
+            )
+            thread.start()
+
+    @staticmethod
+    @instance_lock
+    @request_lock
+    def formatting_task(path, source):
+        logger.debug("on formatting thread")
+        try:
+            result = client.format_code(source)
+            logger.debug(result)
+
+        except client.ServerOffline:
+            set_offline()
+            logger.debug("ServerOffline")
+
+        except Exception:
+            logger.error("format document", exc_info=True)
+
+        else:
+            if result.error:  # any error
+                return
+
+            window = sublime.active_window()
+            view = window.open_file(path)
+            view.run_command(
+                "pytools_apply_rpc_change", args={"changes": result.results}
+            )
 
     def is_visible(self):
         return valid_source(self.view)
