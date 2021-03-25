@@ -609,8 +609,6 @@ class Event(sublime_plugin.ViewEventListener):
 class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
 
-    # @instance_lock
-    # @request_lock
     def run(self, edit):
         logger.info("on format document")
 
@@ -625,26 +623,10 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
                 return
 
             source = view.substr(sublime.Region(0, view.size()))
-
-            # try:
-            #     result = client.format_code(source)
-            #     logger.debug(result)
-
-            # except client.ServerOffline:
-            #     set_offline()
-            #     logger.debug("ServerOffline")
-
-            # except Exception:
-            #     logger.error("format document", exc_info=True)
-
-            # else:
-            #     if result.error:  # any error
-            #         return
-
-            #     document.apply_changes(view, edit, result.results)
+            file_name = view.file_name()
 
             thread = threading.Thread(
-                target=self.formatting_task, args=(view.file_name(), source)
+                target=self.formatting_task, args=(file_name, source)
             )
             thread.start()
 
@@ -653,6 +635,7 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
     @request_lock
     def formatting_task(path, source):
         logger.debug("on formatting thread")
+
         try:
             result = client.format_code(source)
             logger.debug(result)
@@ -666,6 +649,7 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
 
         else:
             if result.error:  # any error
+                logger.debug(result.error)
                 return
 
             window = sublime.active_window()
