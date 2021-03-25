@@ -268,11 +268,23 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         try:
             logger.debug("running server")
             logger.debug("%s, %s, %s", server_path, server_module, activate_path)
-            request_lock(
+            # request_lock(
+            #     client.run_server(
+            #         server_path, server_module, activate_path=activate_path
+            #     )
+            # )
+            active = request_lock(
                 client.run_server(
                     server_path, server_module, activate_path=activate_path
                 )
             )
+
+            if active:  # ---------------------
+                ncount = 0
+                while not SERVER_ONLINE:
+                    time.sleep(pow(2, ncount))  # sleep for 2^n second
+                    ncount += 1
+                    initialize()
 
         except client.ServerError:
             logger.debug("server error")
@@ -281,15 +293,15 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         except Exception:
             logger.error("run server", exc_info=True)
 
-        else:
-            logger.debug("server ready")
-            self.window.status_message("Server ready")
+        # else:
+        #     logger.debug("server ready")
+        #     self.window.status_message("Server ready")
 
-            # wait server activated
-            time.sleep(1.0)
+        #     # wait server activated
+        #     time.sleep(1.0)
 
-            # initialize server
-            initialize()
+        #     # initialize server
+        #     initialize()
 
 
 class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):

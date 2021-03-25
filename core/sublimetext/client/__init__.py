@@ -2,7 +2,8 @@
 
 
 from .remote import (
-    run_server,
+    # run_server,
+    run_server,  # -----------------
     ServerError,
     ServerOffline,
     InvalidInput,
@@ -25,6 +26,7 @@ __all__ = [
     "ServerOffline",
     "shutdown",
     "run_server",
+    # "run_server_2",  # --------------
     "fetch_completion",
     "fetch_documentation",
     "format_code",
