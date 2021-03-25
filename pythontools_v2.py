@@ -787,16 +787,24 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
             )
 
     def on_input_name_done(self, name):
+        view = sublime.active_window().active_view()
         thread = threading.Thread(
-            target=self.rename_thread, args=(self.path, self.offset, name)
+            target=self.rename_thread, args=(view, self.path, self.offset, name)
         )
         thread.start()
 
     @staticmethod
     @instance_lock
     @request_lock
-    def rename_thread(path, offset, name):
+    def rename_thread(view, path, offset, name):
         try:
+            if feature_enabled(W_ABSOLUTE_IMPORT):
+                work_dir = absolute_folder(view)
+            else:
+                work_dir = os.path.dirname(view.file_name())
+
+            change_workspace(work_dir)
+
             result = client.rename(file_path=path, offset=offset, new_name=name)
 
         except client.ServerOffline:
