@@ -387,7 +387,11 @@ class Server:
 
         try:
             path = params["uri"]
-            project_path = os.path.dirname(path)  # project limited to current directory
+            project_path = (
+                self.workspace_directory
+                if self.workspace_directory
+                else os.path.dirname(path)
+            )
             offset = params.get("location", None)
             new_name = params["new_name"]
 

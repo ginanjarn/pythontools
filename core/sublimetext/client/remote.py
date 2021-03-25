@@ -196,10 +196,11 @@ def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
         raise ServerOffline from None
 
 
-def server_subproces(
-    server_path: str, server_module: str, activate_path: str = None
-) -> None:
+def run_server(server_path: str, server_module: str, activate_path: str = None) -> bool:
     """server subprocess
+
+    Return:
+        bool: server running
 
     Raises:
         ServerError
@@ -211,9 +212,6 @@ def server_subproces(
 
     workdir = server_path
     logger.debug(workdir)
-
-    # use current environment if not defined
-    # env = os.environ.copy() if not sys_env else sys_env
 
     try:
         if os.name == "nt":
@@ -242,37 +240,34 @@ def server_subproces(
                 # env=env,
             )
 
-        _, serr = server_proc.communicate()
-        err_message = "\n".join(serr.decode().splitlines())
+        if server_proc.poll():
+            _, serr = server_proc.communicate()
+            err_message = "\n".join(serr.decode().splitlines())
 
-        if server_proc.returncode == 123:
-            raise PortInUse(err_message)
+            if server_proc.returncode == 123:
+                raise PortInUse(err_message)
 
-        if server_proc.returncode == 1:
-            logger.debug("server error:\n%s", err_message)
-            raise ServerError(err_message)
+            if server_proc.returncode == 1:
+                logger.debug("server error:\n%s", err_message)
+                raise ServerError(err_message)
+
+        else:
+            # pool() return None if child process running
+
+            logger.debug("server activated")
 
     except PortInUse:
         logger.debug("OSError, port in use")
+
     except FileNotFoundError as err:
         logger.exception("python not found in path", exc_info=True)
-        raise ServerError from err
+        raise ServerError(err) from err
+
     except Exception as err:
         logger.exception("cannot run_server", exc_info=True)
-        raise ServerError from err
+        raise ServerError(err) from err
 
-
-def run_server(server_path: str, server_module: str, activate_path: str = None) -> None:
-    """running server thread
-
-    Raises:
-        ServerError
-    """
-
-    thread = threading.Thread(
-        target=server_subproces, args=(server_path, server_module, activate_path,)
-    )
-    thread.start()
+    return True
 
 
 def ping(*args: "Any") -> "ResponseMessage":

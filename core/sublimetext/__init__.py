@@ -2,11 +2,11 @@
 
 
 from .client import ServerError, ServerOffline, InvalidInput
-from . import document, settings, client
+from . import document, interpreter, client
 
 __all__ = [
     "document",
-    "settings",
+    "interpreter",
     "client",
     "ServerOffline",
     "ServerError",
