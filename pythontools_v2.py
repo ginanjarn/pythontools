@@ -160,10 +160,10 @@ def initialize():
         SERVER_CAPABILITY[F_DIAGNOSTIC] = result.results.get("diagnostic", False)
         SERVER_CAPABILITY[F_RENAME] = result.results.get("rename", False)
         logger.debug(SERVER_CAPABILITY)
+        sublime.status_message("READY")
 
     finally:
         logger.debug("SERVER_ONLINE : %s, INITIALIZED : %s", SERVER_ONLINE, INITIALIZED)
-        sublime.status_message("READY")
 
 
 WORKSPACE_DIRECTORY = None
