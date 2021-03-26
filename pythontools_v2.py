@@ -163,6 +163,7 @@ def initialize():
 
     finally:
         logger.debug("SERVER_ONLINE : %s, INITIALIZED : %s", SERVER_ONLINE, INITIALIZED)
+        sublime.status_message("READY")
 
 
 WORKSPACE_DIRECTORY = None
@@ -181,6 +182,8 @@ def change_workspace(directory_path) -> None:
         if result.results:
             WORKSPACE_DIRECTORY = result.results["workspace_directory"]
             logger.debug("WORKSPACE_DIRECTORY = %s", WORKSPACE_DIRECTORY)
+
+            sublime.status_message("Workspace : %s" % WORKSPACE_DIRECTORY)
 
 
 def valid_source(view, pos=0):
@@ -276,6 +279,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             )
 
             if active:
+                sublime.status_message("SERVER RUNNING")
                 ncount = 0
                 while not SERVER_ONLINE:
                     time.sleep(pow(2, ncount))  # sleep for 2^n second
@@ -328,6 +332,8 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
             INITIALIZED = False
             SERVER_CAPABILITY.clear()
             WORKSPACE_DIRECTORY = None
+
+            sublime.status_message("SERVER TERMINATED")
 
 
 def plugin_loaded():
