@@ -323,9 +323,11 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
         finally:
             global INITIALIZED
             global SERVER_CAPABILITY
+            global WORKSPACE_DIRECTORY
 
             INITIALIZED = False
             SERVER_CAPABILITY.clear()
+            WORKSPACE_DIRECTORY = None
 
 
 def plugin_loaded():
@@ -857,4 +859,5 @@ class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):
             "SERVER_ONLINE : %s, SERVER_ERROR : %s, SERVER_CAPABILITY : %s"
             % (SERVER_ONLINE, SERVER_ERROR, SERVER_CAPABILITY)
         )
-        print("DIAGNOSTICS : %s", DIAGNOSTICS)
+        print("WORKSPACE_DIRECTORY : %s" % WORKSPACE_DIRECTORY)
+        print("DIAGNOSTICS : %s" % DIAGNOSTICS)
