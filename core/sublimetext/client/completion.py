@@ -27,6 +27,6 @@ def fetch_completion(src: str, line: int, character: int) -> "ResponseMessage":
         "uri": src,
         "location": {"line": line, "character": character},
     }
-    response = request(message.to_rpc())
+    response = request(message.to_rpc(), timeout=3)
     logger.debug(response)
     return ResponseMessage.from_rpc(response)

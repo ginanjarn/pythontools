@@ -24,6 +24,6 @@ def format_code(src: str) -> "ResponseMessage":
 
     message = RequestMessage("textDocument.formatting")
     message.params = {"uri": src}
-    response = request(message.to_rpc())
+    response = request(message.to_rpc(), timeout=30)
     logger.debug(response)
     return ResponseMessage.from_rpc(response)

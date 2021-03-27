@@ -27,6 +27,6 @@ def get_diagnostic(path: str) -> "ResponseMessage":
         "uri": path,
     }
     logger.debug(message)
-    response = request(message.to_rpc())
+    response = request(message.to_rpc(), timeout=180)
     logger.debug(response)
     return ResponseMessage.from_rpc(response)

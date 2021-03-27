@@ -162,7 +162,13 @@ class ResponseMessage:
             return cls("-1", error="invalid response: %s" % str(err))
 
 
-def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
+def request(
+    message: str,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8088,
+    timeout: "Optional[float]" = 0  # unlimited timeout
+) -> str:
     """handle socket request
 
     Raises:
@@ -176,6 +182,7 @@ def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
+            conn.settimeout(timeout)
             conn.connect((host, port))
             conn.sendall(create_rpc_message(message))
 
@@ -192,8 +199,11 @@ def request(message: str, host: str = "127.0.0.1", port: int = 8088) -> str:
                 else:
                     return content
 
-    except ConnectionError:
-        raise ServerOffline from None
+    except socket.timeout as err:
+        return ""
+
+    except ConnectionError as err:
+        raise ServerOffline(err) from None
 
 
 def run_server(server_path: str, server_module: str, activate_path: str = None) -> bool:
@@ -278,14 +288,15 @@ def ping(*args: "Any") -> "ResponseMessage":
     """
 
     message = RequestMessage("ping", args)
-    response = request(message.to_rpc())
+    response = request(message.to_rpc(), timeout=0.5)
     return ResponseMessage.from_rpc(response)
 
 
 def initialize(*args: "Any") -> "ResponseMessage":
     """initialize server"""
+
     message = RequestMessage("initialize", args)
-    response = request(message.to_rpc())
+    response = request(message.to_rpc(), timeout=30)
     return ResponseMessage.from_rpc(response)
 
 
@@ -299,7 +310,7 @@ def shutdown(*args: "Any") -> "ResponseMessage":
     """
 
     message = RequestMessage("exit", args)
-    response = request(message.to_rpc())
+    response = request(message.to_rpc(), timeout=0.5)
     return ResponseMessage.from_rpc(response)
 
 
@@ -314,5 +325,5 @@ def change_workspace(workspace_dir: str) -> "ResponseMessage":
 
     message = RequestMessage("document.changeWorkspace")
     message.params = {"uri": workspace_dir}
-    response = request(message.to_rpc())
+    response = request(message.to_rpc(), timeout=0.5)
     return ResponseMessage.from_rpc(response)

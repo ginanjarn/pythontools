@@ -34,6 +34,6 @@ def rename(file_path: str, offset: int, new_name: str) -> "ResponseMessage":
         "location": offset,
         "new_name": new_name,
     }
-    response = request(message.to_rpc())
+    response = request(message.to_rpc(), timeout=180)
     logger.debug(response)
     return ResponseMessage.from_rpc(response)
