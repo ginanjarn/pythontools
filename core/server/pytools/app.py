@@ -426,9 +426,13 @@ def main():
 
         server.listen()
 
+    except ConnectionError as err:
+        logger.error("Connection error", exc_info=True)
+
     except OSError:
         logger.debug("port in use")
         sys.exit(123)
+
     except Exception:
         logger.fatal("unexpected error", exc_info=True)
         sys.exit(1)
