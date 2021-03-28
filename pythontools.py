@@ -280,10 +280,11 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
             if active:
                 sublime.status_message("SERVER RUNNING")
-                ncount = 0
-                while not SERVER_ONLINE:
-                    time.sleep(pow(2, ncount))  # sleep for 2^n second
-                    ncount += 1
+
+                for _ in range(5):
+                    if INITIALIZED:  # cancel
+                        return
+
                     initialize()
 
         except client.ServerError:
