@@ -161,6 +161,13 @@ class ResponseMessage:
         except ValueError as err:
             return cls("-1", error="invalid response: %s" % str(err))
 
+    def to_rpc(self) -> str:
+        """convert to rpc message"""
+
+        return json.dumps(
+            {"id": self.resp_id, "results": self.results, "error": self.error}
+        )
+
 
 def request(
     message: str,
@@ -200,7 +207,7 @@ def request(
                     return content
 
     except socket.timeout as err:
-        return ""
+        return ResponseMessage(resp_id="-1", error=str(err)).to_rpc()
 
     except ConnectionError as err:
         raise ServerOffline(err) from None
