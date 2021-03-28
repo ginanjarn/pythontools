@@ -209,7 +209,10 @@ class Server:
             sock.listen()
             while True:
                 # process request
-                self.on_listening(sock, callback=self.process)
+                try:
+                    self.on_listening(sock, callback=self.process)
+                except ConnectionError as err:
+                    logger.debug("ConnectionError: %s", repr(err))
 
                 # continue listening
                 if not self.next:
@@ -425,9 +428,6 @@ def main():
         server.register_service("textDocument.get_diagnostic", server.get_diagnostic)
 
         server.listen()
-
-    except ConnectionError as err:
-        logger.error("Connection error", exc_info=True)
 
     except OSError:
         logger.debug("port in use")
