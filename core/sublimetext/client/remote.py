@@ -7,7 +7,6 @@ import socket
 import subprocess
 import json
 from random import random
-import threading
 import logging
 
 logger = logging.getLogger(__name__)
@@ -109,6 +108,19 @@ def create_rpc_message(message: str) -> bytes:
     return encoded
 
 
+# fmt: off
+
+# JSON_RPC KEY
+
+ID          = "id"
+METHOD      = "method"
+PARAMS      = "params"
+RESULTS     = "results"
+ERROR       = "error"
+
+# fmt: on
+
+
 class RequestMessage:
     """Request message helper"""
 
@@ -129,7 +141,7 @@ class RequestMessage:
             TypeError
         """
 
-        message = {"id": self.req_id, "method": self.method, "params": self.params}
+        message = {ID: self.req_id, METHOD: self.method, PARAMS: self.params}
         return json.dumps(message)
 
 
@@ -157,16 +169,14 @@ class ResponseMessage:
 
         try:
             parsed = json.loads(message)
-            return cls(parsed["id"], parsed["results"], parsed["error"])
+            return cls(parsed[ID], parsed[RESULTS], parsed[ERROR])
         except ValueError as err:
             return cls("-1", error="invalid response: %s" % str(err))
 
     def to_rpc(self) -> str:
         """convert to rpc message"""
 
-        return json.dumps(
-            {"id": self.resp_id, "results": self.results, "error": self.error}
-        )
+        return json.dumps({ID: self.resp_id, RESULTS: self.results, ERROR: self.error})
 
 
 def request(

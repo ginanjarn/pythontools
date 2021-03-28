@@ -99,6 +99,19 @@ def create_rpc_message(message: str) -> bytes:
     return b"%s%s%s" % (header.encode("ascii"), RPC_SEPARATOR, content_encoded)
 
 
+# fmt: off
+
+# JSON_RPC KEY
+
+ID          = "id"
+METHOD      = "method"
+PARAMS      = "params"
+RESULTS     = "results"
+ERROR       = "error"
+
+# fmt: on
+
+
 class RequestMessage:
     """Request message helper"""
 
@@ -117,7 +130,7 @@ class RequestMessage:
         Raises:
             json.JSONDecodeError"""
         loaded = json.loads(message)
-        return cls(loaded["id"], loaded["method"], loaded["params"])
+        return cls(loaded[ID], loaded[METHOD], loaded[PARAMS])
 
 
 class ResponseMessage:
@@ -147,9 +160,7 @@ class ResponseMessage:
 
         Raises:
             TypeError"""
-        return json.dumps(
-            {"id": self.id_, "results": self.results, "error": self.error}
-        )
+        return json.dumps({ID: self.id_, RESULTS: self.results, ERROR: self.error})
 
 
 class Server:
@@ -189,15 +200,9 @@ class Server:
 
             try:
                 result = callback(content)
-            except Exception:
+            except Exception as err:
                 logger.exception("internal error")
-                result = json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": None,
-                        "error": {"code": 1, "message": "invalid request"},
-                    }
-                )
+                result = json.dumps({"jsonrpc": "2.0", ID: None, ERROR: str(err),})
             logger.debug(result)
             conn.sendall(create_rpc_message(result))
 
