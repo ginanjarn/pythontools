@@ -212,16 +212,20 @@ class Server:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind((host, port))
             sock.listen()
+
             while True:
                 # process request
                 try:
                     self.on_listening(sock, callback=self.process)
+
                 except ConnectionError as err:
                     logger.debug("ConnectionError: %s", repr(err))
 
-                # continue listening
-                if not self.next:
-                    break
+                finally:
+
+                    # check continue listenis
+                    if not self.next:
+                        break
 
     def register_service(
         self, method: str, callback: "Callback[Dict[str, Any]Optional[Any]]"
