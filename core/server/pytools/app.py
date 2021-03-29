@@ -268,7 +268,8 @@ class Server:
     @staticmethod
     def isinstalled(package: Text) -> bool:
         """check if module installed"""
-        return True if find_spec(package) else False
+
+        return bool(find_spec(package))
 
     def initialize(self, params: Dict[Text, Any]) -> Dict[Text, Any]:
         """initialize"""
