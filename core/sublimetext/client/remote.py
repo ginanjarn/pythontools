@@ -203,18 +203,20 @@ def request(
             conn.connect((host, port))
             conn.sendall(create_rpc_message(message))
 
-            recv = []
+            downloaded = []
+            buf_size = 4096
+
             while True:
-                data = conn.recv(1024)
-                try:
-                    recv.append(data)
-                    content = get_rpc_content(b"".join(recv))
-                except ContentIncomplete:
-                    continue
-                except ContentOverflow as err:
-                    raise InvalidResponse from err
-                else:
-                    return content
+                data = conn.recv(buf_size)
+                downloaded.append(data)
+
+                if len(data) < buf_size:
+                    break
+
+            return get_rpc_content(b"".join(downloaded))
+
+    except (ContentIncomplete, ContentOverflow) as err:
+        raise ContentInvalid(err) from err
 
     except socket.timeout as err:
         return ResponseMessage(resp_id="-1", error=str(err)).to_rpc()

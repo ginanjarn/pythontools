@@ -179,30 +179,26 @@ class Server:
 
         conn, addr = sock.accept()
         print("Connected by", addr)
+
         with conn:
-            recv = []
-            content = ""
+            buf_size = 4096
+            downloaded = []
+
             while True:
-                data = conn.recv(1024)
-                try:
-                    recv.append(data)
-                    logger.debug(recv)
-                    content = get_rpc_content(b"".join(recv))
-                except ContentInvalid:
-                    break
-                except ContentIncomplete:
-                    continue
-                except ContentOverflow:
-                    break
-                else:
-                    logger.debug(content)
+                data = conn.recv(buf_size)
+                downloaded.append(data)
+
+                if len(data) < buf_size:
                     break
 
             try:
+                content = get_rpc_content(b"".join(downloaded))
                 result = callback(content)
+
             except Exception as err:
                 logger.exception("internal error")
                 result = json.dumps({"jsonrpc": "2.0", ID: None, ERROR: str(err),})
+
             logger.debug(result)
             conn.sendall(create_rpc_message(result))
 
@@ -221,11 +217,9 @@ class Server:
                 except ConnectionError as err:
                     logger.debug("ConnectionError: %s", repr(err))
 
-                finally:
-
-                    # check continue listenis
-                    if not self.next:
-                        break
+                # check continue listenis
+                if not self.next:
+                    break
 
     def register_service(
         self, method: str, callback: "Callback[Dict[str, Any]Optional[Any]]"
