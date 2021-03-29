@@ -225,11 +225,8 @@ def request(
         raise ServerOffline(err) from None
 
 
-def run_server(server_path: str, server_module: str, activate_path: str = None) -> bool:
+def run_server(server_path: str, server_module: str, activate_path: str = None) -> None:
     """server subprocess
-
-    Return:
-        bool: server running
 
     Raises:
         ServerError
@@ -295,8 +292,6 @@ def run_server(server_path: str, server_module: str, activate_path: str = None) 
     except Exception as err:
         logger.exception("cannot run_server", exc_info=True)
         raise ServerError(err) from err
-
-    return True
 
 
 def ping(*args: "Any") -> "ResponseMessage":

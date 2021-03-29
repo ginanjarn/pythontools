@@ -272,20 +272,22 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             logger.debug("running server")
             logger.debug("%s, %s, %s", server_path, server_module, activate_path)
 
-            active = request_lock(
+            request_lock(
                 client.run_server(
                     server_path, server_module, activate_path=activate_path
                 )
             )
 
-            if active:
-                sublime.status_message("SERVER RUNNING")
+            sublime.status_message("SERVER RUNNING")
 
-                for _ in range(5):
-                    if INITIALIZED:  # cancel
-                        return
+            while True:
+                if INITIALIZED:
+                    return
 
-                    initialize()
+                initialize()
+
+                if not INITIALIZED:
+                    time.sleep(1)
 
         except client.ServerError:
             logger.debug("server error")
