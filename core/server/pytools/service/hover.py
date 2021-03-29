@@ -15,8 +15,10 @@ logger.addHandler(sh)
 
 
 try:
-    from jedi import Script, Project
+    from jedi import Script, Project, preload_module
     from jedi.api.classes import BaseName
+
+    preload_module(["numpy", "tensorflow", "wx"])
 
     class Documentations(list):
         """documentation list"""

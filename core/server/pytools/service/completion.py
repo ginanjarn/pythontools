@@ -14,8 +14,10 @@ logger.addHandler(sh)
 
 
 try:
-    from jedi import Script, Project  # type: ignore
+    from jedi import Script, Project, preload_module  # type: ignore
     from jedi.api.classes import Completion  # type: ignore
+
+    preload_module(["numpy", "tensorflow", "wx"])
 
     class Completions(list):
         """completion list"""
