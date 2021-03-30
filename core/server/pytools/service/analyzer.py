@@ -17,6 +17,14 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
+class PylintMessage(str):
+    """Pylint message"""
+
+
+class PyflakesMessage(str):
+    """Pyflakes message"""
+
+
 def pylint(path: str, *, enable: List[str] = None, disable: List[str] = None) -> str:
     """pylint"""
 
@@ -63,53 +71,129 @@ def pylint(path: str, *, enable: List[str] = None, disable: List[str] = None) ->
         raise ModuleNotFoundError("pylint") from None
 
     sout, serr = server_proc.communicate()
-    logger.debug("return code = %s", server_proc.returncode)
-    logger.debug("==> STDOUT\n%s", sout.decode())
-    logger.debug("==> STDERR\n%s", serr.decode())
+    if serr:
+        raise Exception("\n".join(serr.decode().splitlines()))
 
-    if server_proc.returncode != 0:
-        raise Exception(serr.decode())
+    return PylintMessage(sout.decode())
 
-    return sout.decode()
+
+def pyflakes(path):
+    """lint with pyflakes"""
+
+    pyflakes_cmd = ["pyflakes", path]
+    env = os.environ.copy()
+
+    try:
+        if os.name == "nt":
+            # linux subprocess module does not have STARTUPINFO
+            # so only use it if on Windows
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
+            server_proc = subprocess.Popen(
+                pyflakes_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+                env=env,
+                startupinfo=si,
+            )
+        else:
+            server_proc = subprocess.Popen(
+                pyflakes_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+                env=env,
+            )
+
+    except FileNotFoundError:
+        raise ModuleNotFoundError("pyflakes") from None
+
+    sout, serr = server_proc.communicate()
+    if serr:
+        raise Exception("\n".join(serr.decode().splitlines()))
+
+    return PyflakesMessage(sout.decode())
+
+
+# fmt: off
+
+# SEVERITY
+
+ERROR       = 1
+WARNING     = 2
+INFO        = 3
+HINT        = 4
+
+# fmt: on
 
 
 def transform_severity(severity):
-    code = {"F": 1, "E": 1, "W": 2, "C": 3, "R": 4}
+    code = {"F": ERROR, "E": ERROR, "W": WARNING, "C": INFO, "R": HINT}
     return code[severity]
+
+
+def parse_pylint(message):
+    pattern = r"(\w):(\w*): (.*):(\d*):(\d*): (.*)"
+
+    for line in message.splitlines():
+        found = re.findall(pattern, line)
+        if not any(found):
+            logger.debug("not found from : '%s'", line)
+            continue
+
+        Diagnostic = namedtuple(
+            "Diagnostic", ["severity", "msg_id", "path", "line", "column", "message"],
+        )
+        diagnose = Diagnostic(*found[0])
+        yield {
+            "severity": transform_severity(diagnose.severity),
+            "code": diagnose.msg_id,
+            "path": diagnose.path,
+            "line": int(diagnose.line),
+            "column": int(diagnose.column),
+            "message": diagnose.message,
+        }
+
+
+def parse_pyflakes(message):
+    pattern = r"(.*):(\d*):(\d*)\s(.*)"
+
+    for line in message.splitlines():
+        found = re.findall(pattern, line)
+        if not any(found):
+            logger.debug("not found from : '%s'", line)
+            continue
+
+        Diagnostic = namedtuple("Diagnostic", ["path", "line", "column", "message"])
+        diagnose = Diagnostic(*found[0])
+        yield {
+            "severity": WARNING,
+            "code": "WARNING",
+            "path": diagnose.path,
+            "line": int(diagnose.line),
+            "column": int(diagnose.column),
+            "message": diagnose.message,
+        }
 
 
 def to_rpc(message: str) -> "Dict[str, Any]":
     """convert message to rpc"""
-    pattern = r"(\w):(\w*): (.*):(\d*):(\d*): (.*)"
 
-    def parse(message):
-        for line in message.splitlines():
-            found = re.findall(pattern, line)
-            if not any(found):
-                logger.debug("not found from : '%s'", line)
-                continue
-
-            Diagnostic = namedtuple(
-                "Diagnostic",
-                ["severity", "msg_id", "path", "line", "column", "message"],
-            )
-            diagnose = Diagnostic(*found[0])
-            yield {
-                "severity": transform_severity(diagnose.severity),
-                "code": diagnose.msg_id,
-                "path": diagnose.path,
-                "line": int(diagnose.line),
-                "column": int(diagnose.column),
-                "message": diagnose.message,
-            }
-
-    return list(parse(message))
+    return (
+        list(parse_pylint(message))
+        if isinstance(message, PylintMessage)
+        else list(parse_pyflakes(message))
+    )
 
 
-def lint(path: str, **kwargs):
+def lint(path: str, *, engine="pylint", **kwargs):
     """lint module"""
 
-    results = pylint(path)
+    lint_func = {"pylint": pylint, "pyflakes": pyflakes}
+    results = lint_func[engine](path)
 
     raw = kwargs.get("raw", None)
     return to_rpc(results) if not raw else results
