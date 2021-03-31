@@ -218,6 +218,9 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
             logger.error("set interpreter", exc_info=True)
 
 
+PROCESS = None
+
+
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     """Run server command"""
 
@@ -272,11 +275,17 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             logger.debug("running server")
             logger.debug("%s, %s, %s", server_path, server_module, activate_path)
 
-            request_lock(
-                client.run_server(
+            @request_lock
+            def runserver():
+                # store subprocess.Popen object
+                global PROCESS
+                
+                PROCESS = client.run_server(
                     server_path, server_module, activate_path=activate_path
                 )
-            )
+
+            # run server
+            runserver()
 
             sublime.status_message("SERVER RUNNING")
 
@@ -331,10 +340,18 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
             global INITIALIZED
             global SERVER_CAPABILITY
             global WORKSPACE_DIRECTORY
+            global PROCESS
 
             INITIALIZED = False
             SERVER_CAPABILITY.clear()
             WORKSPACE_DIRECTORY = None
+
+            # terminate subprocess.Popen object if any
+            if PROCESS is not None:
+                if PROCESS.poll() is not None:
+                    PROCESS.terminate()
+
+                PROCESS = None
 
             sublime.status_message("SERVER TERMINATED")
 
