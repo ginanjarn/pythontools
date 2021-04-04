@@ -110,6 +110,9 @@ def set_offline(status=True):
 
     SERVER_ONLINE = not status
 
+    if status:  # bool
+        uninitialize()
+
 
 def check_connection():
     """check any server online"""
@@ -172,6 +175,19 @@ def initialize():
 
     finally:
         logger.debug("SERVER_ONLINE : %s, INITIALIZED : %s", SERVER_ONLINE, INITIALIZED)
+
+
+def uninitialize():
+    """unitialize server"""
+
+    logger.info("uninitialize")
+    global SERVER_ONLINE
+    global INITIALIZED
+    global SERVER_CAPABILITY
+
+    SERVER_ONLINE = False
+    INITIALIZED = False
+    SERVER_CAPABILITY.clear()
 
 
 WORKSPACE_DIRECTORY = None
@@ -310,7 +326,8 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     def initialize_server():
         """try to initialize server max 10 times trial"""
 
-        for _ in range(10):
+        for trial in range(10):
+            logger.debug("try running ( %s )", trial)
             if INITIALIZED:
                 return
 
