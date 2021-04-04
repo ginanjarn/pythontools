@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request
+from .remote import RequestMessage, ResponseMessage, request, generate_id
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ def format_code(src: str) -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage("textDocument.formatting")
+    message = RequestMessage.builder(generate_id(), "textDocument.formatting")
     message.params = {"uri": src}
     response = request(message.to_rpc(), timeout=30)
     logger.debug(response)

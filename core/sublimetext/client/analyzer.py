@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request
+from .remote import RequestMessage, ResponseMessage, request, generate_id
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ def get_diagnostic(path: str) -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage("textDocument.get_diagnostic")
+    message = RequestMessage.builder(generate_id(), "textDocument.get_diagnostic")
     message.params = {
         "uri": path,
     }

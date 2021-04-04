@@ -1,16 +1,18 @@
-"""main operation"""
+"""main server"""
 
-
-from re import findall
+import argparse
 import json
-import os
-import socket
-import sys
 import logging
-from typing import Callable, Text, Dict, Any
-from importlib.util import find_spec
+import os
+import socketserver
+import sys
+import signal
 
-from .service import completion, hover, document_formatting, analyzer, rename
+from importlib.util import find_spec
+from re import findall
+from typing import Dict, List, Any, Optional, Tuple, Text
+
+from service import completion, hover, document_formatting, rename, analyzer
 
 
 logger = logging.getLogger(__name__)
@@ -25,84 +27,47 @@ logger.addHandler(sh)
 logger.addHandler(fh)
 
 
-class ContentIncomplete(ValueError):
-    """Content incomplete"""
-
-
-class ContentOverflow(ValueError):
-    """Content too large"""
-
-
-class ContentInvalid(ValueError):
-    """Content invalid"""
-
-
-class InvalidMethod(KeyError):
-    """unable to find method"""
-
-
-class InvalidParams(KeyError):
-    """unable to get required params"""
-
-
 RPC_SEPARATOR = b"\r\n\r\n"
 
 
-def content_length(header: bytes) -> int:
+def get_content_length(header: bytes):
     """get content length"""
 
-    decoded = header.decode("ascii")
-    found = findall(r"Content-Length: (\d*)\s?", decoded)
+    found = findall(r"Content-Length: (\d*)\s?", header.decode("ascii"))
     if not any(found):
-        logger.error("unabe parse from %s", header)
-        raise ValueError("unable fetch content length from %s" % decoded)
+        raise ValueError("unable to get Content-Length in header")
+
     return int(found[0])
 
 
 def get_rpc_content(message: bytes) -> str:
-    """get rpc content
+    separated = message.split(RPC_SEPARATOR)
 
-    Raises:
-        ContentInvalid
-        ContentIncomplete
-        ContentOverflow
-    """
+    if len(separated) != 2:
+        raise ValueError("unable to separate header and body")
 
-    try:
-        header, content = message.split(RPC_SEPARATOR)
-    except (ValueError, TypeError) as err:
-        logger.error("unable parse rpc message from %s", message)
-        raise ContentInvalid(err) from err
+    content_length = get_content_length(separated[0])
 
-    if len(content) < content_length(header):
-        logger.debug(
-            "Length want: %s expected: %s", len(content), content_length(header)
+    if len(separated[1]) != content_length:
+        raise ValueError(
+            "invalid content length, required : %s, expected : %s"
+            % (content_length, len(separated[1]))
         )
-        raise ContentIncomplete(
-            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
-        )
-    if len(content) > content_length(header):
-        logger.debug(
-            "Length want: %s expected: %s", len(content), content_length(header)
-        )
-        raise ContentOverflow(
-            "Length: want: %s, expected: %s" % (len(content), content_length(header)),
-        )
-    return content.decode("utf-8")
+
+    return separated[1].decode("utf-8")
 
 
-def create_rpc_message(message: str) -> bytes:
-    """create rpc message"""
-
+def create_rpc_content(message: str) -> bytes:
     content_encoded = message.encode("utf-8")
-    header = "Content-Length: %s" % (len(content_encoded))
-    return b"%s%s%s" % (header.encode("ascii"), RPC_SEPARATOR, content_encoded)
+    content_length = len(content_encoded)
+    header = bytes("Content-Length: %d" % content_length, "ascii")
+
+    return b"".join([header, RPC_SEPARATOR, content_encoded])
 
 
 # fmt: off
 
-# JSON_RPC KEY
-
+# RPC KEYS
 ID          = "id"
 METHOD      = "method"
 PARAMS      = "params"
@@ -111,332 +76,479 @@ ERROR       = "error"
 
 # fmt: on
 
+# Transaction classes +++++++++++++++++++++++++++++++++
 
-class RequestMessage:
-    """Request message helper"""
 
-    def __init__(self, id_: str, method: str, params: "Dict[str,Any]") -> None:
-        self.id_ = id_
-        self.method = method
-        self.params = params
+class RequestMessage(dict):
+    """request message"""
+
+    @property
+    def id_(self):
+        return self[ID]
+
+    @id_.setter
+    def id_(self, id_):
+        self[ID] = id_
+
+    @property
+    def method(self):
+        return self[METHOD]
+
+    @property
+    def params(self):
+        return self[PARAMS]
+
+    @classmethod
+    def builder(cls, id_, method=None, params=None):
+        return cls({ID: id_, METHOD: method, PARAMS: params})
 
     @classmethod
     def from_rpc(cls, message: str) -> "RequestMessage":
-        """load RequestMessage from rpc
-
-        Result:
-            RequestMessage
-
-        Raises:
-            json.JSONDecodeError"""
-        loaded = json.loads(message)
-        return cls(loaded[ID], loaded[METHOD], loaded[PARAMS])
-
-
-class ResponseMessage:
-    """Response message"""
-
-    def __init__(
-        self,
-        id_: int,
-        *,
-        results: "Dict[str, Any]" = None,
-        error: "Dict[str, Any]" = None
-    ) -> None:
-        self.id_ = id_
-        self.results = results
-        self.error = error
-
-    def __repr__(self) -> str:
-        return "{id_}\n{results}\n{error}\n".format(
-            id_=self.id_, results=self.results, error=self.error
-        )
+        return cls(json.loads(message))
 
     def to_rpc(self) -> str:
-        """export to rpc
-
-        Results:
-            JSON string
-
-        Raises:
-            TypeError"""
-        return json.dumps({ID: self.id_, RESULTS: self.results, ERROR: self.error})
+        return json.dumps(self)
 
 
-class Server:
-    """Server engine"""
+class ResponseMessage(dict):
+    """response message"""
 
-    def __init__(self) -> None:
-        self.service = {}
-        self.capability = []
-        self.next = True
+    @property
+    def id_(self):
+        return self[ID]
 
-        self.workspace_directory = ""
+    @id_.setter
+    def id_(self, id_):
+        self[ID] = id_
 
-    @staticmethod
-    def on_listening(sock: socket.socket, *, callback: Callable[[Text], Text]) -> None:
-        """on listening process"""
+    @property
+    def results(self):
+        return self[RESULTS]
 
-        conn, addr = sock.accept()
-        print("Connected by", addr)
+    @results.setter
+    def results(self, res):
+        self[RESULTS] = res
 
-        with conn:
-            buf_size = 4096
-            downloaded = []
+    @property
+    def error(self):
+        return self[ERROR]
 
-            while True:
-                data = conn.recv(buf_size)
-                downloaded.append(data)
+    @error.setter
+    def error(self, err):
+        self[ERROR] = err
 
-                if len(data) < buf_size:
-                    break
+    @classmethod
+    def builder(cls, id_, results=None, error=None):
+        return cls({ID: id_, RESULTS: results, ERROR: error})
 
-            try:
-                content = get_rpc_content(b"".join(downloaded))
-                result = callback(content)
+    @classmethod
+    def from_rpc(cls, message: str) -> "ResponseMessage":
+        return cls(json.loads(message))
 
-            except Exception as err:
-                logger.exception("internal error")
-                result = json.dumps({"jsonrpc": "2.0", ID: None, ERROR: str(err),})
+    def to_rpc(self) -> str:
+        return json.dumps(self)
 
-            logger.debug(result)
-            conn.sendall(create_rpc_message(result))
 
-    def listen(self, host: str = "127.0.0.1", port: int = 8088) -> None:
-        """listen socket request"""
+# Error classes ++++++++++++++++++++++++++++++++++++++++
+class InvalidRPCMessage(ValueError):
+    """Invalid RPC Message"""
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind((host, port))
-            sock.listen()
+    def __init__(self, err):
+        super().__init__("Invalid RPC Message : %s" % repr(err))
 
-            while True:
-                # process request
-                try:
-                    self.on_listening(sock, callback=self.process)
 
-                except ConnectionError as err:
-                    logger.debug("ConnectionError: %s", repr(err))
+class MethodNotFound(KeyError):
+    """Method not found error"""
 
-                # check continue listenis
-                if not self.next:
-                    break
+    def __init__(self, err):
+        super().__init__("method not found : %s" % str(err))
 
-    def register_service(
-        self, method: str, callback: "Callback[Dict[str, Any]Optional[Any]]"
-    ) -> None:
-        """Register service capability"""
 
-        self.service[method] = callback
+class InvalidParams(Exception):
+    """required params not found"""
 
-    def process(self, message: str) -> str:
-        """process operation
+    def __init__(self, err):
+        if isinstance(err, KeyError):
+            super().__init__("params not found : %s" % str(err))
+        else:
+            super().__init__(str(err))
 
-        Results:
-            ResponseMessage json string
-        """
 
-        try:
-            parsed = RequestMessage.from_rpc(message)
-        except json.JSONDecodeError as err:
-            logger.debug("invalid message", exc_info=True)
-            error = "invalid message : %s" % err
-            return ResponseMessage(-1, error=error).to_rpc()
+class InternalError(Exception):
+    """internal error occured"""
 
-        response = ResponseMessage(-1)
-        try:
-            response.id_ = parsed.id_
-            process_method = self.service.get(parsed.method)
-            if not process_method:
-                raise InvalidMethod(parsed.method)
-            response.results = process_method(parsed.params)
 
-        except InvalidParams as err:
-            response.error = "invalid params : %s" % err
-        except InvalidMethod as err:
-            response.error = "method not found : %s" % err
-        except Exception as err:
-            logger.debug("internal error", exc_info=True)
-            response.error = "internal error : %s" % err
+# RPC classes +++++++++++++++++++++++++++++++++++
 
-        return response.to_rpc()
+Params = Dict[str, Any]
 
-    @staticmethod
-    def ping(params: "Dict[str, Any]") -> "Dict[str, Any]":
-        logger.info("ping\nmessage = %s", params)
+
+class DocumentURI(str):
+    """uri formatted document path"""
+
+    @classmethod
+    def from_rpc(cls, params: Params) -> "DocumentURI":
+        return cls(params["uri"])
+
+
+class Location(dict):
+    """cursor position at (line, column)"""
+
+    @classmethod
+    def builder(cls, line, character):
+        holder = {}
+        holder["line"] = line
+        holder["character"] = character
+        return cls(holder)
+
+    @property
+    def line(self) -> int:
+        return self["line"]
+
+    @property
+    def character(self) -> int:
+        return self["character"]
+
+    @classmethod
+    def from_rpc(cls, params: Params) -> "Location":
+        return cls(params)
+
+
+class TextDocumentPositionParams(dict):
+    """cursor position at text document"""
+
+    @classmethod
+    def builder(cls, uri: DocumentURI, location: Location):
+        holder = {}
+        self["uri"] = uri
+        self["location"] = location
+        return cls(holder)
+
+    @property
+    def uri(self) -> DocumentURI:
+        return self["uri"]
+
+    @property
+    def location(self) -> Location:
+        return Location.from_rpc(self["location"])
+
+    @classmethod
+    def from_rpc(cls, params: Params) -> "TextDocumentPositionParams":
+        return cls(params)
+
+
+class WorkspaceParams(dict):
+    """change workspace params"""
+
+    @classmethod
+    def builder(cls, uri: DocumentURI):
+        holder = {}
+        holder["uri"] = uri
+        return cls(holder)
+
+    @property
+    def uri(self) -> DocumentURI:
+        return self["uri"]
+
+    @classmethod
+    def from_rpc(cls, params: Params) -> "WorkspaceParams":
+        return cls(params)
+
+
+# fmt: off
+
+TERMINATE           = False
+WORKSPACE_DIRECTORY = None
+
+# RPC COMMAND
+PING                = "ping"
+EXIT                = "exit"
+INITIALIZE          = "initialize"
+CHANGE_WORKPACE     = "document.changeWorkspace"
+COMPLETION          = "textDocument.completion"
+HOVER               = "textDocument.hover"
+FORMATTING          = "textDocument.formatting"
+RENAME              = "document.rename"
+DIAGNOSTIC          = "textDocument.get_diagnostic"
+
+# RPC FEATURE
+F_COMPLETION        = "completion"
+F_HOVER             = "hover"
+F_FORMATTING        = "document_format"
+F_RENAME            = "rename"
+F_DIAGNOSTIC        = "diagnostic"
+
+# fmt: on
+
+
+class Process:
+    def __init__(self):
+        self.commands = {}
+
+        self.commands[PING] = self.ping
+        self.commands[EXIT] = self.exit
+        self.commands[INITIALIZE] = self.initialize
+        self.commands[CHANGE_WORKPACE] = self.change_workspace
+
+        # features map ++++++++++++++++++++++++++++++++++++++++++
+        self.commands[COMPLETION] = self.complete
+        self.commands[HOVER] = self.hover
+        self.commands[FORMATTING] = self.formatting
+        self.commands[RENAME] = self.rename
+        self.commands[DIAGNOSTIC] = self.get_diagnostic
+
+    def ping(self, params: Any) -> Any:
         return params
 
-    @staticmethod
-    def isinstalled(package: Text) -> bool:
-        """check if module installed"""
-
-        return bool(find_spec(package))
-
-    def initialize(self, params: Dict[Text, Any]) -> Dict[Text, Any]:
-        """initialize"""
-
-        return {
-            "completion": self.isinstalled("jedi"),
-            "hover": self.isinstalled("jedi"),
-            "document_format": self.isinstalled("black"),
-            "diagnostic": self.isinstalled("pylint"),
-            "rename": self.isinstalled("rope"),
-        }
-
-    def exit(self, params: "Dict[str, Any]") -> None:
-        logger.info("exit")
-        self.next = False
+    def exit(self, params: Any) -> Any:
+        global TERMINATE
+        TERMINATE = True
         return None
 
-    def completion(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
-        """completion
+    def initialize(self, params: Any) -> Any:
 
-        Raises:
-            InvalidParams
-            """
+        # features capable +++++++++++++++++++++++++++++++++++++++
+        return {
+            F_COMPLETION: bool(find_spec("jedi")),
+            F_HOVER: bool(find_spec("jedi")),
+            F_FORMATTING: bool(find_spec("black")),
+            F_RENAME: bool(find_spec("rope")),
+            F_DIAGNOSTIC: bool(find_spec("pylint")),
+        }
 
-        project = (
-            None
-            if not self.workspace_directory
-            else completion.Project(self.workspace_directory)
-        )
-        try:
-            src = params["uri"]
-            line = params["location"]["line"]
-            character = params["location"]["character"]
-
-            line += 1  # jedi use 1 based index
-            completions = completion.complete(
-                src, line=line, column=character, project=project
-            )
-            return completion.to_rpc(completions)
-        except KeyError as err:
-            raise InvalidParams(err) from err
-        except ValueError as err:
-            raise InvalidParams(err) from err
-
-    def hover(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
-        """hover
-
-        Raises:
-            InvalidParams"""
-
-        project = (
-            None
-            if not self.workspace_directory
-            else hover.Project(self.workspace_directory)
-        )
-        try:
-            src = params["uri"]
-            line = params["location"]["line"]
-            character = params["location"]["character"]
-
-            line += 1  # jedi use 1 based index
-            helps = hover.get_documentation(
-                src, line=line, column=character, project=project
-            )
-            return hover.to_rpc(helps)
-        except KeyError as err:
-            raise InvalidParams(err) from err
-        except ValueError as err:
-            raise InvalidParams(err) from err
-
-    @staticmethod
-    def document_format(params: "Dict[str, Any]") -> "Dict[str, Any]":
-        """document format
-
-        Raises:
-            InvalidParams"""
+    def change_workspace(self, params: Any) -> Any:
+        global WORKSPACE_DIRECTORY
 
         try:
-            src = params["uri"]
-            results = document_formatting.format_document(src)
-            return document_formatting.to_rpc(results, source=src)
-        except KeyError as err:
-            raise InvalidParams(err) from err
-        except ValueError as err:
-            raise InvalidParams(err) from err
+            wparams = WorkspaceParams.from_rpc(params)
+            WORKSPACE_DIRECTORY = wparams.uri
+            results = {"workspace_directory": WORKSPACE_DIRECTORY}
 
-    def change_workspace(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
-        """change workspace configg
-
-        Raises:
-            InvalidParams"""
-
-        try:
-            path = params["uri"]
-            self.workspace_directory = path
-        except KeyError as err:
-            raise InvalidParams(err) from err
-        except ValueError as err:
+        except (ValueError, KeyError) as err:
             raise InvalidParams(err) from err
         else:
-            return {"workspace_directory": self.workspace_directory}
+            return results
 
-    def get_diagnostic(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
-        """get diagnostic
-
-        Raises:
-            InvalidParams"""
-
+    # features function +++++++++++++++++++++++++++++++++++++++++
+    def complete(self, params: Any) -> Any:
         try:
-            path = params["uri"]
-            return analyzer.lint(path)
-        except KeyError as err:
-            raise InvalidParams(err) from err
-        except ValueError as err:
+            tparams = TextDocumentPositionParams.from_rpc(params)
+            path = tparams.uri
+            line = tparams.location.line + 1  # jedi use 1 based index
+            column = tparams.location.character
+
+        except (ValueError, KeyError) as err:
             raise InvalidParams(err) from err
 
-    def rename(self, params: "Dict[str, Any]") -> "Dict[str, Any]":
-        """rename
-
-        Raises:
-            InvalidParams"""
-
         try:
-            path = params["uri"]
-            project_path = (
-                self.workspace_directory
-                if self.workspace_directory
-                else os.path.dirname(path)
+            project = (
+                completion.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
             )
-            offset = params.get("location", None)
+            completions_candidate = completion.complete(
+                path, line=line, column=column, project=project
+            )
+            results = completion.to_rpc(completions_candidate)
+
+        except Exception as err:
+            raise InternalError(err) from err
+        else:
+            return results
+
+    def hover(self, params: Any) -> Any:
+        try:
+            tparams = TextDocumentPositionParams.from_rpc(params)
+            path = tparams.uri
+            line = tparams.location.line + 1  # jedi use 1 based index
+            column = tparams.location.character
+
+        except (ValueError, KeyError) as err:
+            raise InvalidParams(err) from err
+
+        try:
+            project = (
+                hover.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
+            )
+            documentation_candidate = hover.get_documentation(
+                path, line=line, column=column, project=project
+            )
+            results = hover.to_rpc(documentation_candidate)
+
+        except Exception as err:
+            raise InternalError(err) from err
+        else:
+            return results
+
+    def formatting(self, params: Any) -> Any:
+        try:
+            uri = DocumentURI.from_rpc(params)
+            src = uri
+
+        except (ValueError, KeyError) as err:
+            raise InvalidParams(err) from err
+
+        try:
+            format_result = document_formatting.format_document(src)
+            results = document_formatting.to_rpc(format_result, source=src)
+        except Exception as err:
+            raise InternalError(err) from err
+        else:
+            return results
+
+    def rename(self, params: Any) -> Any:
+        try:
+            path = params["uri"]
+
+            project = (
+                WORKSPACE_DIRECTORY if WORKSPACE_DIRECTORY else os.path.dirname(path)
+            )
+
+            resource = path
+            offset = params["location"]
             new_name = params["new_name"]
 
-            changes = rename.rename_attribute(
-                project_path=project_path,
-                resource_path=path,
-                offset=offset if offset and offset > 0 else None,
-                new_name=new_name,
-            )
+        except (ValueError, KeyError) as err:
+            raise InvalidParams(err) from err
 
-            return rename.to_rpc(changes)
+        try:
+            changes = rename.rename_attribute(project, resource, offset, new_name)
+            results = rename.to_rpc(changes)
+
+        except Exception as err:
+            raise InternalError(err) from err
+        else:
+            return results
+
+    def get_diagnostic(self, params: Any):
+        try:
+            uri = DocumentURI.from_rpc(params)
+        except (ValueError, KeyError) as err:
+            raise InvalidParams(err) from err
+
+        try:
+            diagnostic = analyzer.lint(path=uri)
+            results = analyzer.to_rpc(diagnostic)
+        except Exception as err:
+            raise InternalError(err)
+        else:
+            return results
+
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    def run(self, method: str, params: Any):
+        try:
+            command = self.commands[method]
         except KeyError as err:
-            raise InvalidParams(err) from err
-        except ValueError as err:
-            raise InvalidParams(err) from err
+            raise MethodNotFound(err) from err
+        else:
+            return command(params)
+
+    def handle_request(self, message: bytes) -> bytes:
+        """handle request
+
+        Returns:
+            Tuple[result, next]
+        """
+
+        resp_message = ResponseMessage.builder("-1")
+
+        try:
+            # parsing requestcontent
+            try:
+                req_message = RequestMessage.from_rpc(get_rpc_content(message))
+            except json.JSONDecodeError as err:
+                raise InvalidRPCMessage(err) from err
+
+            resp_message.id_ = req_message.id_
+
+        except Exception as err:
+            logger.debug("loading message error", exc_info=True)
+            resp_message.error = repr(err)
+            return create_rpc_content(resp_message.to_rpc())
+
+        try:
+            # processing
+
+            results = self.run(req_message.method, req_message.params)
+            resp_message.id_ = req_message.id_
+            resp_message.results = results
+
+        except Exception as err:
+            logger.exception("process exception : %s", err)
+            resp_message.error = repr(err)
+            return create_rpc_content(resp_message.to_rpc())
+
+        else:
+            logger.debug(resp_message)
+            return create_rpc_content(resp_message.to_rpc())
+
+
+BUFF_SIZE = 4096
+
+
+class ServerHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        """server handle"""
+
+        print(" request from :", self.client_address)
+
+        received = []
+
+        try:
+            while True:
+                chunk = self.request.recv(BUFF_SIZE)
+                received.append(chunk)
+                if len(chunk) < BUFF_SIZE:
+                    break
+
+            process = Process()
+            request_message = b"".join(received)
+            logger.debug("request_message : %s", request_message)
+            results = process.handle_request(request_message)
+            logger.debug("results : %s", results)
+            self.request.sendall(results)
+
+            if TERMINATE:
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        except Exception as err:
+            logger.exception("handling socket exception", exc_info=True)
+
+
+def handle_exit(num, frame):
+    sys.exit(0)
+
+
+ADDRESS = ("127.0.0.1", 8088)
 
 
 def main():
-    """main app"""
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--port", help="socket port")
+    args = parser.parse_args()
+
+    global ADDRESS
+    if args.port:
+        ADDRESS = ("127.0.0.1", int(args.port))
 
     try:
-        server = Server()
-        server.register_service("ping", server.ping)
-        server.register_service("initialize", server.initialize)
-        server.register_service("exit", server.exit)
-        server.register_service("textDocument.completion", server.completion)
-        server.register_service("textDocument.hover", server.hover)
-        server.register_service("textDocument.formatting", server.document_format)
-        server.register_service("document.changeWorkspace", server.change_workspace)
-        server.register_service("document.rename", server.rename)
-        server.register_service("textDocument.get_diagnostic", server.get_diagnostic)
+        signal.signal(signal.SIGTERM, handle_exit)
 
-        server.listen()
+        print(f">>> Server running at {ADDRESS}.\n Press [CTRL+C] to stop.\n")
 
-    except OSError:
-        logger.debug("port in use")
+        server = socketserver.TCPServer(ADDRESS, ServerHandler)
+        server.serve_forever()
+
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt (terminate server):\n Terminated.. .  . .")
+
+    except OSError as err:
+        print(repr(err))
         sys.exit(123)
 
-    except Exception:
-        logger.fatal("unexpected error", exc_info=True)
-        sys.exit(1)
+    except Exception as err:
+        logger.error(repr(err), exc_info=True)
+
+
+if __name__ == "__main__":
+    main()

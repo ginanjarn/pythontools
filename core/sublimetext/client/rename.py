@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request
+from .remote import RequestMessage, ResponseMessage, request, generate_id
 
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def rename(file_path: str, offset: int, new_name: str) -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage("document.rename")
+    message = RequestMessage.builder(generate_id(), "document.rename")
     message.params = {
         "uri": file_path,
         "location": offset,

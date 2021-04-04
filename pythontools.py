@@ -23,9 +23,8 @@ fh.setLevel(logging.ERROR)
 logger.addHandler(sh)
 logger.addHandler(fh)
 
-
 INSTANCE_LOCK = threading.Lock()
-REQUEST_LOCK = threading.RLock()
+BOUNDARY_LOCK = threading.RLock()
 
 
 def instance_lock(func):
@@ -39,37 +38,46 @@ def instance_lock(func):
             logger.debug("instance locked")
             return None
 
+        key = "PROCESS_LOCK"
+        view = sublime.active_window().active_view()
+        view.set_status(key, "BUSY")
         with INSTANCE_LOCK:
-            return func(*args, **kwargs)
+            result = func(*args, **kwargs)
+        view.erase_status(key)
+        return result
 
     return wrapper
 
 
-def request_lock(func):
+def boundary_lock(func):
     """request lock
 
     prevent multiple request from outer context
     """
 
     def wrapper(*args, **kwargs):
-        with REQUEST_LOCK:
+        with BOUNDARY_LOCK:
             return func(*args, **kwargs)
 
     return wrapper
 
 
-SETTINGS_BASENAME = "Pytools.sublime-settings"
+# fmt: off
+
+SETTINGS_BASENAME       = "Pytools.sublime-settings"
 
 # Settings name
-F_AUTOCOMPLETE = "autocomplete"
-F_DOCUMENTATION = "documentation"
-W_ABSOLUTE_IMPORT = "absolute_import"
-F_DOCUMENT_FORMATTING = "document_formatting"
-F_DIAGNOSTIC = "diagnostic"
-F_RENAME = "rename"
+F_AUTOCOMPLETE          = "autocomplete"
+F_DOCUMENTATION         = "documentation"
+W_ABSOLUTE_IMPORT       = "absolute_import"
+F_DOCUMENT_FORMATTING   = "document_formatting"
+F_DIAGNOSTIC            = "diagnostic"
+F_RENAME                = "rename"
 
 # All features enabled
-ALL_ENABLED = False
+ALL_ENABLED             = False
+
+# fmt: on
 
 
 def feature_enabled(feature_name: str, *, default=True) -> bool:
@@ -121,7 +129,7 @@ def check_connection():
 INITIALIZED = False
 
 
-@request_lock
+@boundary_lock
 def initialize():
     """initialize server"""
 
@@ -169,7 +177,6 @@ def initialize():
 WORKSPACE_DIRECTORY = None
 
 
-@request_lock
 def change_workspace(directory_path) -> None:
     """change workspace directory"""
 
@@ -220,7 +227,7 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
 
 PROCESS = None
 
-
+# FIXME: while server stuck will make start server --------------------------------------
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     """Run server command"""
 
@@ -254,70 +261,80 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         thread.start()
 
     @instance_lock
-    @request_lock
+    @boundary_lock
     def run_server(self, python_path):
         """run server thread"""
 
         activate_path = interpreter.find_activate(python_path)
         env_path = interpreter.find_environment(python_path)
 
-        server_path = os.path.dirname(
-            os.path.abspath(__file__)
-        )  # current file directory
-
-        server_module = "core.server"
+        server_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "core", "server", "pytools",
+        )
 
         activate_path = [path for path in (activate_path, env_path) if path]
 
-        global SERVER_ERROR
-
         try:
             logger.debug("running server")
-            logger.debug("%s, %s, %s", server_path, server_module, activate_path)
+            logger.debug("%s, %s", server_path, activate_path)
 
-            @request_lock
+            @boundary_lock
             def runserver():
                 # store subprocess.Popen object
                 global PROCESS
-                
-                PROCESS = client.run_server(
-                    server_path, server_module, activate_path=activate_path
-                )
+
+                PROCESS = client.run_server(server_path, activate_path=activate_path)
 
             # run server
             runserver()
 
             sublime.status_message("SERVER RUNNING")
 
-            while True:
-                if INITIALIZED:
-                    return
-
-                initialize()
-
-                if not INITIALIZED:
-                    time.sleep(1)
-
         except client.ServerError:
             logger.debug("server error")
+            global SERVER_ERROR
             SERVER_ERROR = True
+
+        except client.PortInUse:
+            # continue initialize if server already running
+            self.initialize_server()
 
         except Exception:
             logger.error("run server", exc_info=True)
+
+        else:
+            # continue initialize if server already running
+            self.initialize_server()
+
+    @staticmethod
+    def initialize_server():
+        """try to initialize server max 10 times trial"""
+
+        for _ in range(10):
+            if INITIALIZED:
+                return
+
+            initialize()
+
+            if not INITIALIZED:
+                time.sleep(1)
+
+        # set server error if failed 10 times initialize
+        global SERVER_ERROR
+        SERVER_ERROR = True
 
 
 class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
 
     """Shutdown command"""
 
-    @instance_lock
     def run(self):
         logger.info("on shutdown server")
 
         thread = threading.Thread(target=self.exit)
         thread.start()
 
-    @request_lock
+    @instance_lock
     def exit(self):
 
         if SERVER_ERROR:  # cancel all request if server error
@@ -415,7 +432,6 @@ class Event(sublime_plugin.ViewEventListener):
             )
 
     @instance_lock
-    @request_lock
     def fetch_completions(self, prefix, location):
         """fetch completion process"""
 
@@ -503,7 +519,6 @@ class Event(sublime_plugin.ViewEventListener):
         return '<div style="padding: .5em">%s</div>' % content
 
     @instance_lock
-    @request_lock
     def fetch_documentation(self, location):
         """fetch documentation thread"""
 
@@ -660,7 +675,6 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
 
     @staticmethod
     @instance_lock
-    @request_lock
     def formatting_task(path, source):
         logger.debug("on formatting thread")
 
@@ -712,7 +726,6 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
             thread.start()
 
     @instance_lock
-    @request_lock
     def diagnose(self, path):
         logger.debug("on diagnostic thread")
         try:
@@ -823,7 +836,6 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
 
     @staticmethod
     @instance_lock
-    @request_lock
     def rename_thread(view, path, offset, name):
         try:
             if feature_enabled(W_ABSOLUTE_IMPORT):

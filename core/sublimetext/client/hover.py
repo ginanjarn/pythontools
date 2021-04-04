@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request
+from .remote import RequestMessage, ResponseMessage, request, generate_id
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ def fetch_documentation(src: str, line: int, character: int) -> "ResponseMessage
         ServerOffline
     """
 
-    message = RequestMessage("textDocument.hover")
+    message = RequestMessage.builder(generate_id(), "textDocument.hover")
     message.params = {
         "uri": src,
         "location": {"line": line, "character": character},

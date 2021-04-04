@@ -135,7 +135,7 @@ def transform_severity(severity):
     return code[severity]
 
 
-def parse_pylint(message):
+def pylint_to_rpc(message):
     pattern = r"(\w):(\w*): (.*):(\d*):(\d*): (.*)"
 
     for line in message.splitlines():
@@ -158,7 +158,7 @@ def parse_pylint(message):
         }
 
 
-def parse_pyflakes(message):
+def pyflakes_to_rpc(message):
     pattern = r"(.*):(\d*):(\d*)\s(.*)"
 
     for line in message.splitlines():
@@ -183,17 +183,17 @@ def to_rpc(message: str) -> "Dict[str, Any]":
     """convert message to rpc"""
 
     return (
-        list(parse_pylint(message))
+        list(pylint_to_rpc(message))
         if isinstance(message, PylintMessage)
-        else list(parse_pyflakes(message))
+        else list(pyflakes_to_rpc(message))
     )
 
 
-def lint(path: str, *, engine="pylint", **kwargs):
+def lint(path: str, *, engine="pylint"):
     """lint module"""
 
+    # lint engine map
     lint_func = {"pylint": pylint, "pyflakes": pyflakes}
     results = lint_func[engine](path)
 
-    raw = kwargs.get("raw", None)
-    return to_rpc(results) if not raw else results
+    return results
