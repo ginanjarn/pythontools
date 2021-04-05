@@ -87,6 +87,20 @@ def feature_enabled(feature_name: str, *, default=True) -> bool:
     return sublime_settings.get(feature_name, default) and ALL_ENABLED
 
 
+SERVER_ONLINE = False
+
+
+def set_offline(offline=True):
+    """set server state offline"""
+
+    global SERVER_ONLINE
+
+    SERVER_ONLINE = not offline
+
+    if offline:  # bool
+        uninitialize()
+
+
 class ServerCapability(dict):
     """server capability"""
 
@@ -100,35 +114,6 @@ def server_capable(feature_name: str, *, default=False) -> bool:
     return SERVER_CAPABILITY.get(feature_name, default)
 
 
-SERVER_ONLINE = False
-
-
-def set_offline(status=True):
-    """set server state offline"""
-
-    global SERVER_ONLINE
-
-    SERVER_ONLINE = not status
-
-    if status:  # bool
-        uninitialize()
-
-
-def check_connection():
-    """check any server online"""
-
-    logger.info("check_connection")
-
-    try:
-        client.ping()
-
-    except client.ServerOffline:
-        set_offline()
-
-    else:
-        set_offline(False)  # online
-
-
 INITIALIZED = False
 
 
@@ -138,7 +123,6 @@ def initialize():
 
     logger.info("initialize")
 
-    global SERVER_ONLINE
     global INITIALIZED
 
     if INITIALIZED:
@@ -150,44 +134,35 @@ def initialize():
     except client.ServerOffline:
         logger.debug("ServerOffline")
         set_offline()
-        INITIALIZED = False
 
     else:
         logger.debug("ServerOnline")
         set_offline(False)  # online
-        INITIALIZED = True
 
         if result.error:
+            logger.debug("server initialize error : %s", repr(result.error))
             return
 
-        global SERVER_CAPABILITY
+        INITIALIZED = True
 
-        # apply capability
-        SERVER_CAPABILITY[F_AUTOCOMPLETE] = result.results.get("completion", False)
-        SERVER_CAPABILITY[F_DOCUMENTATION] = result.results.get("hover", False)
-        SERVER_CAPABILITY[F_DOCUMENT_FORMATTING] = result.results.get(
-            "document_format", False
-        )
-        SERVER_CAPABILITY[F_DIAGNOSTIC] = result.results.get("diagnostic", False)
-        SERVER_CAPABILITY[F_RENAME] = result.results.get("rename", False)
-        logger.debug(SERVER_CAPABILITY)
+        set_capability(result.results)
         sublime.status_message("READY")
 
     finally:
         logger.debug("SERVER_ONLINE : %s, INITIALIZED : %s", SERVER_ONLINE, INITIALIZED)
 
 
-def uninitialize():
-    """unitialize server"""
+def set_capability(capability):
 
-    logger.info("uninitialize")
-    global SERVER_ONLINE
-    global INITIALIZED
     global SERVER_CAPABILITY
 
-    SERVER_ONLINE = False
-    INITIALIZED = False
-    SERVER_CAPABILITY.clear()
+    # apply capability
+    SERVER_CAPABILITY[F_AUTOCOMPLETE] = capability.get("completion", False)
+    SERVER_CAPABILITY[F_DOCUMENTATION] = capability.get("hover", False)
+    SERVER_CAPABILITY[F_DOCUMENT_FORMATTING] = capability.get("document_format", False)
+    SERVER_CAPABILITY[F_DIAGNOSTIC] = capability.get("diagnostic", False)
+    SERVER_CAPABILITY[F_RENAME] = capability.get("rename", False)
+    logger.debug(SERVER_CAPABILITY)
 
 
 WORKSPACE_DIRECTORY = None
@@ -204,9 +179,24 @@ def change_workspace(directory_path) -> None:
         result = client.change_workspace(directory_path)
         if result.results:
             WORKSPACE_DIRECTORY = result.results["workspace_directory"]
-            logger.debug("WORKSPACE_DIRECTORY = %s", WORKSPACE_DIRECTORY)
+            logger.debug("WORKSPACE_DIRECTORY = %s", repr(WORKSPACE_DIRECTORY))
 
             sublime.status_message("Workspace : %s" % WORKSPACE_DIRECTORY)
+
+
+def uninitialize():
+    """unitialize server"""
+
+    logger.info("uninitialize")
+    global SERVER_ONLINE
+    global INITIALIZED
+    global SERVER_CAPABILITY
+    global WORKSPACE_DIRECTORY
+
+    SERVER_ONLINE = False
+    INITIALIZED = False
+    SERVER_CAPABILITY.clear()
+    WORKSPACE_DIRECTORY = None
 
 
 def valid_source(view, pos=0):
@@ -327,10 +317,10 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         """try to initialize server max 10 times trial"""
 
         for trial in range(10):
-            logger.debug("try running ( %s )", trial)
             if INITIALIZED:
                 return
 
+            logger.debug("try initialize : < %s >", trial)
             initialize()
 
             if not INITIALIZED:
@@ -371,14 +361,7 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
             logger.debug("finish shutdown server")
 
         finally:
-            global INITIALIZED
-            global SERVER_CAPABILITY
-            global WORKSPACE_DIRECTORY
             global PROCESS
-
-            INITIALIZED = False
-            SERVER_CAPABILITY.clear()
-            WORKSPACE_DIRECTORY = None
 
             # terminate subprocess.Popen object if any
             if PROCESS is not None:
