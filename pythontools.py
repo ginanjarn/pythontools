@@ -6,6 +6,7 @@ import sublime_plugin  # pylint: disable=import-error
 import threading
 import logging
 import os
+import signal
 import time
 from .core.sublimetext import client
 from .core.sublimetext import document
@@ -290,6 +291,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
                 global PROCESS
 
                 PROCESS = client.run_server(server_path, activate_path=activate_path)
+                logger.debug("process pid : %s", PROCESS.pid)
 
             # run server
             runserver()
@@ -320,7 +322,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             if INITIALIZED:
                 return
 
-            logger.debug("try initialize : < %s >", trial)
+            logger.debug("try initialize : <%s>", trial)
             initialize()
 
             if not INITIALIZED:
@@ -329,6 +331,8 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         # set server error if failed 10 times initialize
         global SERVER_ERROR
         SERVER_ERROR = True
+
+        kill_process()
 
 
 class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
@@ -361,16 +365,26 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
             logger.debug("finish shutdown server")
 
         finally:
-            global PROCESS
-
-            # terminate subprocess.Popen object if any
-            if PROCESS is not None:
-                if PROCESS.poll() is not None:
-                    PROCESS.terminate()
-
-                PROCESS = None
-
+            kill_process()
             sublime.status_message("SERVER TERMINATED")
+
+
+def kill_process():
+    """kill process"""
+
+    logger.info("kill process")
+    global PROCESS
+
+    # terminate subprocess.Popen object if any
+    if PROCESS is not None:
+
+        # PROCESS.poll() is None if process running
+        if PROCESS.poll() is None:
+            pid = PROCESS.pid
+            logger.debug("kill process : %s", pid)
+            os.kill(pid, signal.SIGTERM)
+
+        PROCESS = None
 
 
 def plugin_loaded():
