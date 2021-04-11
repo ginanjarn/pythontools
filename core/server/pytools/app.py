@@ -12,7 +12,8 @@ from importlib.util import find_spec
 from re import findall
 from typing import Dict, List, Any, Optional, Tuple, Text
 
-from service import completion, hover, document_formatting, rename, analyzer
+# from api import rpc
+from api import completion, hover, document_formatting, rename, analyzer
 
 
 logger = logging.getLogger(__name__)
