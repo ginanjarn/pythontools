@@ -12,7 +12,7 @@ from importlib.util import find_spec
 from re import findall
 from typing import Dict, List, Any, Optional, Tuple, Text
 
-# from api import rpc
+from api import rpc
 from api import completion, hover, document_formatting, rename, analyzer
 
 
@@ -66,90 +66,6 @@ def create_rpc_content(message: str) -> bytes:
     return b"".join([header, RPC_SEPARATOR, content_encoded])
 
 
-# fmt: off
-
-# RPC KEYS
-ID          = "id"
-METHOD      = "method"
-PARAMS      = "params"
-RESULTS     = "results"
-ERROR       = "error"
-
-# fmt: on
-
-# Transaction classes +++++++++++++++++++++++++++++++++
-
-
-class RequestMessage(dict):
-    """request message"""
-
-    @property
-    def id_(self):
-        return self[ID]
-
-    @id_.setter
-    def id_(self, id_):
-        self[ID] = id_
-
-    @property
-    def method(self):
-        return self[METHOD]
-
-    @property
-    def params(self):
-        return self[PARAMS]
-
-    @classmethod
-    def builder(cls, id_, method=None, params=None):
-        return cls({ID: id_, METHOD: method, PARAMS: params})
-
-    @classmethod
-    def from_rpc(cls, message: str) -> "RequestMessage":
-        return cls(json.loads(message))
-
-    def to_rpc(self) -> str:
-        return json.dumps(self)
-
-
-class ResponseMessage(dict):
-    """response message"""
-
-    @property
-    def id_(self):
-        return self[ID]
-
-    @id_.setter
-    def id_(self, id_):
-        self[ID] = id_
-
-    @property
-    def results(self):
-        return self[RESULTS]
-
-    @results.setter
-    def results(self, res):
-        self[RESULTS] = res
-
-    @property
-    def error(self):
-        return self[ERROR]
-
-    @error.setter
-    def error(self, err):
-        self[ERROR] = err
-
-    @classmethod
-    def builder(cls, id_, results=None, error=None):
-        return cls({ID: id_, RESULTS: results, ERROR: error})
-
-    @classmethod
-    def from_rpc(cls, message: str) -> "ResponseMessage":
-        return cls(json.loads(message))
-
-    def to_rpc(self) -> str:
-        return json.dumps(self)
-
-
 # Error classes ++++++++++++++++++++++++++++++++++++++++
 class InvalidRPCMessage(ValueError):
     """Invalid RPC Message"""
@@ -179,83 +95,6 @@ class InternalError(Exception):
     """internal error occured"""
 
 
-# RPC classes +++++++++++++++++++++++++++++++++++
-
-Params = Dict[str, Any]
-
-
-class DocumentURI(str):
-    """uri formatted document path"""
-
-    @classmethod
-    def from_rpc(cls, params: Params) -> "DocumentURI":
-        return cls(params["uri"])
-
-
-class Location(dict):
-    """cursor position at (line, column)"""
-
-    @classmethod
-    def builder(cls, line, character):
-        holder = {}
-        holder["line"] = line
-        holder["character"] = character
-        return cls(holder)
-
-    @property
-    def line(self) -> int:
-        return self["line"]
-
-    @property
-    def character(self) -> int:
-        return self["character"]
-
-    @classmethod
-    def from_rpc(cls, params: Params) -> "Location":
-        return cls(params)
-
-
-class TextDocumentPositionParams(dict):
-    """cursor position at text document"""
-
-    @classmethod
-    def builder(cls, uri: DocumentURI, location: Location):
-        holder = {}
-        self["uri"] = uri
-        self["location"] = location
-        return cls(holder)
-
-    @property
-    def uri(self) -> DocumentURI:
-        return self["uri"]
-
-    @property
-    def location(self) -> Location:
-        return Location.from_rpc(self["location"])
-
-    @classmethod
-    def from_rpc(cls, params: Params) -> "TextDocumentPositionParams":
-        return cls(params)
-
-
-class WorkspaceParams(dict):
-    """change workspace params"""
-
-    @classmethod
-    def builder(cls, uri: DocumentURI):
-        holder = {}
-        holder["uri"] = uri
-        return cls(holder)
-
-    @property
-    def uri(self) -> DocumentURI:
-        return self["uri"]
-
-    @classmethod
-    def from_rpc(cls, params: Params) -> "WorkspaceParams":
-        return cls(params)
-
-
 # fmt: off
 
 TERMINATE           = False
@@ -271,6 +110,7 @@ HOVER               = "textDocument.hover"
 FORMATTING          = "textDocument.formatting"
 RENAME              = "document.rename"
 DIAGNOSTIC          = "textDocument.get_diagnostic"
+VALIDATE            = "textDocument.validate"
 
 # RPC FEATURE
 F_COMPLETION        = "completion"
@@ -278,14 +118,29 @@ F_HOVER             = "hover"
 F_FORMATTING        = "document_format"
 F_RENAME            = "rename"
 F_DIAGNOSTIC        = "diagnostic"
+F_VALIDATE          = "validate"
 
 # fmt: on
+BUFF_SIZE = 4096
+BUFFER = None
+BUFFER_URI = None
 
 
-class Process:
-    def __init__(self):
+class ServerHandler(socketserver.BaseRequestHandler):
+    def __init__(self, request, client_address, server):
+        self.request = request
+        self.client_address = client_address
+        self.server = server
+
         self.commands = {}
 
+        self.setup()
+        try:
+            self.handle()
+        finally:
+            self.finish()
+
+    def setup(self):
         self.commands[PING] = self.ping
         self.commands[EXIT] = self.exit
         self.commands[INITIALIZE] = self.initialize
@@ -297,6 +152,7 @@ class Process:
         self.commands[FORMATTING] = self.formatting
         self.commands[RENAME] = self.rename
         self.commands[DIAGNOSTIC] = self.get_diagnostic
+        # self.commands[VALIDATE] = self.validate_source
 
     def ping(self, params: Any) -> Any:
         return params
@@ -315,13 +171,14 @@ class Process:
             F_FORMATTING: bool(find_spec("black")),
             F_RENAME: bool(find_spec("rope")),
             F_DIAGNOSTIC: bool(find_spec("pylint")),
+            # F_VALIDATE: bool(find_spec("pyflakes")),
         }
 
     def change_workspace(self, params: Any) -> Any:
         global WORKSPACE_DIRECTORY
 
         try:
-            wparams = WorkspaceParams.from_rpc(params)
+            wparams = rpc.WorkspaceParams.from_rpc(params)
             WORKSPACE_DIRECTORY = wparams.uri
             results = {"workspace_directory": WORKSPACE_DIRECTORY}
 
@@ -330,10 +187,22 @@ class Process:
         else:
             return results
 
+    # def text_change(self, params: Any):
+    #     """text change only accept full document changes"""
+
+    #     global BUFFER
+
+    #     try:
+    #         BUFFER = params["newText"]
+    #     except (ValueError, TypeError) as err:
+    #         raise InvalidParams(err)
+    #     else:
+    #         return None
+
     # features function +++++++++++++++++++++++++++++++++++++++++
     def complete(self, params: Any) -> Any:
         try:
-            tparams = TextDocumentPositionParams.from_rpc(params)
+            tparams = rpc.TextDocumentPositionParams.from_rpc(params)
             path = tparams.uri
             line = tparams.location.line + 1  # jedi use 1 based index
             column = tparams.location.character
@@ -357,7 +226,7 @@ class Process:
 
     def hover(self, params: Any) -> Any:
         try:
-            tparams = TextDocumentPositionParams.from_rpc(params)
+            tparams = rpc.TextDocumentPositionParams.from_rpc(params)
             path = tparams.uri
             line = tparams.location.line + 1  # jedi use 1 based index
             column = tparams.location.character
@@ -381,7 +250,7 @@ class Process:
 
     def formatting(self, params: Any) -> Any:
         try:
-            uri = DocumentURI.from_rpc(params)
+            uri = rpc.DocumentURI.from_rpc(params)
             src = uri
 
         except (ValueError, KeyError) as err:
@@ -421,7 +290,7 @@ class Process:
 
     def get_diagnostic(self, params: Any):
         try:
-            uri = DocumentURI.from_rpc(params)
+            uri = rpc.DocumentURI.from_rpc(params)
         except (ValueError, KeyError) as err:
             raise InvalidParams(err) from err
 
@@ -432,6 +301,20 @@ class Process:
             raise InternalError(err)
         else:
             return results
+
+    # def validate_source(self, params: Any):
+    #     try:
+    #         uri = rpc.DocumentURI.from_rpc(params)
+    #     except (ValueError, KeyError) as err:
+    #         raise InvalidParams(err) from err
+
+    #     try:
+    #         diagnostic = analyzer.lint(path=uri, engine="pyflakes")
+    #         results = analyzer.to_rpc(diagnostic)
+    #     except Exception as err:
+    #         raise InternalError(err)
+    #     else:
+    #         return results
 
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -450,12 +333,12 @@ class Process:
             Tuple[result, next]
         """
 
-        resp_message = ResponseMessage.builder("-1")
+        resp_message = rpc.ResponseMessage.builder("-1")
 
         try:
             # parsing requestcontent
             try:
-                req_message = RequestMessage.from_rpc(get_rpc_content(message))
+                req_message = rpc.RequestMessage.from_rpc(get_rpc_content(message))
             except json.JSONDecodeError as err:
                 raise InvalidRPCMessage(err) from err
 
@@ -482,11 +365,6 @@ class Process:
             logger.debug(resp_message)
             return create_rpc_content(resp_message.to_rpc())
 
-
-BUFF_SIZE = 4096
-
-
-class ServerHandler(socketserver.BaseRequestHandler):
     def handle(self):
         """server handle"""
 
@@ -501,10 +379,9 @@ class ServerHandler(socketserver.BaseRequestHandler):
                 if len(chunk) < BUFF_SIZE:
                     break
 
-            process = Process()
             request_message = b"".join(received)
             logger.debug("request_message : %s", request_message)
-            results = process.handle_request(request_message)
+            results = self.handle_request(request_message)
             logger.debug("results : %s", results)
             self.request.sendall(results)
 

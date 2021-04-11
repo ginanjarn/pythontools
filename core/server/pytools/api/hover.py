@@ -1,9 +1,11 @@
 """Hover module"""
 
 
-from html import escape
 from typing import List, Dict, Any, Optional
+from html import escape
 import logging
+
+from api import rpc
 
 
 logger = logging.getLogger("formatting")
@@ -53,14 +55,15 @@ try:
         return (
             None
             if help_.is_keyword
-            else {
-                "html": render_html(header_template, help_.docstring()),
-                "link": {
-                    "path": str(help_.module_path) if help_.module_path else None,
-                    "line": help_.line,
-                    "character": help_.column,
-                },
-            }
+            else rpc.Documentation.builder(
+                html_result=render_html(header_template, help_.docstring()),
+                link=rpc.DocumentLink.builder(
+                    uri=str(help_.module_path) if help_.module_path else None,
+                    location=rpc.Location.builder(
+                        line=help_.line, character=help_.column
+                    ),
+                ),
+            )
         )
 
     def to_rpc(helps: List[BaseName]) -> Optional[Dict[str, Any]]:
