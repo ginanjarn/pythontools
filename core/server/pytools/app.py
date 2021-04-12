@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import socketserver
+import socket
 import sys
 import signal
 
@@ -31,8 +32,12 @@ logger.addHandler(fh)
 RPC_SEPARATOR = b"\r\n\r\n"
 
 
-def get_content_length(header: bytes):
-    """get content length"""
+def get_content_length(header: bytes) -> int:
+    """get content length
+
+    Raises:
+        ValueError if Content-Length not found in header
+    """
 
     found = findall(r"Content-Length: (\d*)\s?", header.decode("ascii"))
     if not any(found):
@@ -42,6 +47,8 @@ def get_content_length(header: bytes):
 
 
 def get_rpc_content(message: bytes) -> str:
+    """get content from rpc message"""
+
     separated = message.split(RPC_SEPARATOR)
 
     if len(separated) != 2:
@@ -59,6 +66,8 @@ def get_rpc_content(message: bytes) -> str:
 
 
 def create_rpc_content(message: str) -> bytes:
+    """build rpc message"""
+
     content_encoded = message.encode("utf-8")
     content_length = len(content_encoded)
     header = bytes("Content-Length: %d" % content_length, "ascii")
@@ -86,8 +95,10 @@ class InvalidParams(Exception):
 
     def __init__(self, err):
         if isinstance(err, KeyError):
+            # key not found
             super().__init__("params not found : %s" % str(err))
         else:
+            # parsing error
             super().__init__(str(err))
 
 
@@ -127,7 +138,9 @@ BUFFER_URI = None
 
 
 class ServerHandler(socketserver.BaseRequestHandler):
-    def __init__(self, request, client_address, server):
+    def __init__(
+        self, request: socket.socket, client_address: Tuple[str, int], server: Any
+    ):
         self.request = request
         self.client_address = client_address
         self.server = server
@@ -140,7 +153,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         finally:
             self.finish()
 
-    def setup(self):
+    def setup(self) -> None:
         self.commands[PING] = self.ping
         self.commands[EXIT] = self.exit
         self.commands[INITIALIZE] = self.initialize
@@ -154,7 +167,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         self.commands[DIAGNOSTIC] = self.get_diagnostic
         # self.commands[VALIDATE] = self.validate_source
 
-    def ping(self, params: Any) -> Any:
+    def ping(self, params: rpc.Params) -> Any:
         return params
 
     def exit(self, params: Any) -> Any:
@@ -162,7 +175,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         TERMINATE = True
         return None
 
-    def initialize(self, params: Any) -> Any:
+    def initialize(self, params: rpc.Params) -> Any:
 
         # features capable +++++++++++++++++++++++++++++++++++++++
         return {
@@ -172,9 +185,10 @@ class ServerHandler(socketserver.BaseRequestHandler):
             F_RENAME: bool(find_spec("rope")),
             F_DIAGNOSTIC: bool(find_spec("pylint")),
             # F_VALIDATE: bool(find_spec("pyflakes")),
+            # "pid": os.getpid(),
         }
 
-    def change_workspace(self, params: Any) -> Any:
+    def change_workspace(self, params: rpc.Params) -> Any:
         global WORKSPACE_DIRECTORY
 
         try:
@@ -187,7 +201,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         else:
             return results
 
-    # def text_change(self, params: Any):
+    # def text_change(self, params: rpc.Params):
     #     """text change only accept full document changes"""
 
     #     global BUFFER
@@ -200,7 +214,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
     #         return None
 
     # features function +++++++++++++++++++++++++++++++++++++++++
-    def complete(self, params: Any) -> Any:
+    def complete(self, params: rpc.Params) -> Any:
         try:
             tparams = rpc.TextDocumentPositionParams.from_rpc(params)
             path = tparams.uri
@@ -224,7 +238,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         else:
             return results
 
-    def hover(self, params: Any) -> Any:
+    def hover(self, params: rpc.Params) -> Any:
         try:
             tparams = rpc.TextDocumentPositionParams.from_rpc(params)
             path = tparams.uri
@@ -248,7 +262,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         else:
             return results
 
-    def formatting(self, params: Any) -> Any:
+    def formatting(self, params: rpc.Params) -> Any:
         try:
             uri = rpc.DocumentURI.from_rpc(params)
             src = uri
@@ -264,7 +278,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         else:
             return results
 
-    def rename(self, params: Any) -> Any:
+    def rename(self, params: rpc.Params) -> Any:
         try:
             path = params["uri"]
 
@@ -288,7 +302,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         else:
             return results
 
-    def get_diagnostic(self, params: Any):
+    def get_diagnostic(self, params: rpc.Params) -> Any:
         try:
             uri = rpc.DocumentURI.from_rpc(params)
         except (ValueError, KeyError) as err:
@@ -302,7 +316,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         else:
             return results
 
-    # def validate_source(self, params: Any):
+    # def validate_source(self, params: rpc.Params) -> Any:
     #     try:
     #         uri = rpc.DocumentURI.from_rpc(params)
     #     except (ValueError, KeyError) as err:
@@ -318,7 +332,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
 
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-    def run(self, method: str, params: Any):
+    def run(self, method: str, params: rpc.Params) -> Any:
         try:
             command = self.commands[method]
         except KeyError as err:
@@ -327,11 +341,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
             return command(params)
 
     def handle_request(self, message: bytes) -> bytes:
-        """handle request
-
-        Returns:
-            Tuple[result, next]
-        """
+        """handle request"""
 
         resp_message = rpc.ResponseMessage.builder("-1")
 
@@ -365,7 +375,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
             logger.debug(resp_message)
             return create_rpc_content(resp_message.to_rpc())
 
-    def handle(self):
+    def handle(self) -> None:
         """server handle"""
 
         print(" request from :", self.client_address)
@@ -392,7 +402,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
             logger.exception("handling socket exception", exc_info=True)
 
 
-def handle_exit(num, frame):
+def handle_exit(num, frame) -> None:
     sys.exit(0)
 
 
