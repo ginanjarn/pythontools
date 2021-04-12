@@ -232,8 +232,6 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
             logger.error("set interpreter", exc_info=True)
 
 
-PROCESS = None
-
 # FIXME: while server stuck will make start server --------------------------------------
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     """Run server command"""
@@ -287,11 +285,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
             @boundary_lock
             def runserver():
-                # store subprocess.Popen object
-                global PROCESS
-
-                PROCESS = client.run_server(server_path, activate_path=activate_path)
-                logger.debug("process pid : %s", PROCESS.pid)
+                client.run_server(server_path, activate_path=activate_path)
 
             # run server
             runserver()
@@ -332,8 +326,6 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
         global SERVER_ERROR
         SERVER_ERROR = True
 
-        kill_process()
-
 
 class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
 
@@ -348,9 +340,6 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
     @instance_lock
     def exit(self):
 
-        if SERVER_ERROR:  # cancel all request if server error
-            return
-
         try:
             response = client.shutdown()
         except client.ServerOffline:
@@ -362,29 +351,10 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
 
         else:
             set_offline()
-            logger.debug("finish shutdown server")
 
         finally:
-            kill_process()
+            logger.debug("finish shutdown server")
             sublime.status_message("SERVER TERMINATED")
-
-
-def kill_process():
-    """kill process"""
-
-    logger.info("kill process")
-    global PROCESS
-
-    # terminate subprocess.Popen object if any
-    if PROCESS is not None:
-
-        # PROCESS.poll() is None if process running
-        if PROCESS.poll() is None:
-            pid = PROCESS.pid
-            logger.debug("kill process : %s", pid)
-            os.kill(pid, signal.SIGTERM)
-
-        PROCESS = None
 
 
 def plugin_loaded():
