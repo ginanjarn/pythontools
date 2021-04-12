@@ -73,6 +73,7 @@ F_DOCUMENTATION         = "documentation"
 W_ABSOLUTE_IMPORT       = "absolute_import"
 F_DOCUMENT_FORMATTING   = "document_formatting"
 F_DIAGNOSTIC            = "diagnostic"
+F_VALIDATE              = "validate"
 F_RENAME                = "rename"
 
 # All features enabled
@@ -162,6 +163,7 @@ def set_capability(capability):
     SERVER_CAPABILITY[F_DOCUMENTATION] = capability.get("hover", False)
     SERVER_CAPABILITY[F_DOCUMENT_FORMATTING] = capability.get("document_format", False)
     SERVER_CAPABILITY[F_DIAGNOSTIC] = capability.get("diagnostic", False)
+    SERVER_CAPABILITY[F_VALIDATE] = capability.get("validate", False)
     SERVER_CAPABILITY[F_RENAME] = capability.get("rename", False)
     logger.debug(SERVER_CAPABILITY)
 
@@ -632,6 +634,13 @@ class Event(sublime_plugin.ViewEventListener):
         self.clear_cached_diagnostic()
         self.view.run_command("pytools_clear_diagnostic")
 
+    def on_post_save_async(self) -> None:
+        if valid_source(self.view):
+            path = self.view.file_name()
+            self.view.run_command(
+                "pytools_diagnostic", args={"quick": True, "path": path}
+            )
+
 
 class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
@@ -688,32 +697,72 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
         return valid_source(self.view)
 
 
+class RequirementInvalid(Exception):
+    """invalid required input"""
+
+
 class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
     """Diagnostic command"""
 
-    def run(self, edit, path=None):
+    PYFLAKES = "validate"
+    PYLINT = "diagnose"
+
+    def run(self, edit, path=None, quick=False):
         logger.info("on diagnostic")
 
         view = self.view
-        if all([valid_source(view), feature_enabled(F_DIAGNOSTIC),]):
 
-            if not server_capable(F_DIAGNOSTIC):
-                return
+        def check_requirement(feature, path_required=True):
+
+            # change path if not defined
+            nonlocal path
+
+            if not valid_source(view):
+                raise RequirementInvalid("invalid python file")
+
+            if not feature_enabled(feature):
+                raise RequirementInvalid("feature disabled : %s" % feature)
+
+            if not server_capable(feature):
+                raise RequirementInvalid("server incapable : %s" % feature)
 
             if not path:
-                path = view.file_name()
+                if path_required:
+                    raise RequirementInvalid("path not found")
+                else:
+                    path = view.file_name()
 
-            if not any([os.path.isdir(path), os.path.isfile(path)]):
-                return
+            if not any([os.path.isfile(path), os.path.isdir(path)]):
+                raise RequirementInvalid("invalid path : %s" % path)
 
-            thread = threading.Thread(target=self.diagnose, args=(path,))
+        try:
+            if quick:
+                check_requirement(F_VALIDATE, path_required=True)
+                method = PytoolsDiagnosticCommand.PYFLAKES
+
+            else:
+                check_requirement(F_DIAGNOSTIC, path_required=False)
+                method = PytoolsDiagnosticCommand.PYLINT
+
+        except RequirementInvalid as err:
+            logger.debug("input error : %s", repr(err))
+
+        else:
+            thread = threading.Thread(target=self.diagnose, args=(method, path,))
             thread.start()
 
     @instance_lock
-    def diagnose(self, path):
+    def diagnose(self, lint_method, path):
         logger.debug("on diagnostic thread")
+        logger.debug("target : %s", path)
+
+        lint_functions = {
+            PytoolsDiagnosticCommand.PYFLAKES: client.analyzer.validate,
+            PytoolsDiagnosticCommand.PYLINT: client.analyzer.get_diagnostic,
+        }
+
         try:
-            result = client.analyzer.get_diagnostic(path)
+            result = lint_functions[lint_method](path)
         except client.ServerOffline:
             logger.debug("ServerOffline")
         else:
@@ -723,11 +772,12 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
             global DIAGNOSTICS
 
+            diagnostics = []
             for diagnostic in result.results:
-                DIAGNOSTICS.append(document.Mark.from_rpc(self.view, diagnostic))
+                diagnostics.append(document.Mark.from_rpc(self.view, diagnostic))
 
-            logger.debug(DIAGNOSTICS)
-
+            logger.debug(diagnostics)
+            DIAGNOSTICS.extend(diagnostics)
             document.apply_diagnostics(self.view, DIAGNOSTICS)
 
 

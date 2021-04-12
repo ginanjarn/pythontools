@@ -165,7 +165,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         self.commands[FORMATTING] = self.formatting
         self.commands[RENAME] = self.rename
         self.commands[DIAGNOSTIC] = self.get_diagnostic
-        # self.commands[VALIDATE] = self.validate_source
+        self.commands[VALIDATE] = self.validate_source
 
     def ping(self, params: rpc.Params) -> Any:
         return params
@@ -184,7 +184,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
             F_FORMATTING: bool(find_spec("black")),
             F_RENAME: bool(find_spec("rope")),
             F_DIAGNOSTIC: bool(find_spec("pylint")),
-            # F_VALIDATE: bool(find_spec("pyflakes")),
+            F_VALIDATE: bool(find_spec("pyflakes")),
             # "pid": os.getpid(),
         }
 
@@ -316,19 +316,19 @@ class ServerHandler(socketserver.BaseRequestHandler):
         else:
             return results
 
-    # def validate_source(self, params: rpc.Params) -> Any:
-    #     try:
-    #         uri = rpc.DocumentURI.from_rpc(params)
-    #     except (ValueError, KeyError) as err:
-    #         raise InvalidParams(err) from err
+    def validate_source(self, params: rpc.Params) -> Any:
+        try:
+            uri = rpc.DocumentURI.from_rpc(params)
+        except (ValueError, KeyError) as err:
+            raise InvalidParams(err) from err
 
-    #     try:
-    #         diagnostic = analyzer.lint(path=uri, engine="pyflakes")
-    #         results = analyzer.to_rpc(diagnostic)
-    #     except Exception as err:
-    #         raise InternalError(err)
-    #     else:
-    #         return results
+        try:
+            diagnostic = analyzer.lint(path=uri, engine="pyflakes")
+            results = analyzer.to_rpc(diagnostic)
+        except Exception as err:
+            raise InternalError(err)
+        else:
+            return results
 
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 

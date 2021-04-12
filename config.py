@@ -9,6 +9,7 @@ F_AUTOCOMPLETE = "autocomplete"
 F_DOCUMENTATION = "documentation"
 F_DOCUMENT_FORMATTING = "document_formatting"
 F_DIAGNOSTIC = "diagnostic"
+F_VALIDATE = "validate"
 W_ABSOLUTE_IMPORT = "absolute_import"
 
 
@@ -74,6 +75,20 @@ class PytoolsSetDiagnosticCommand(sublime_plugin.TextCommand):
     def is_checked(self):
         with load_settings() as settings:
             return settings.get(F_DIAGNOSTIC, True)
+
+
+class PytoolsSetValidateCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        with load_settings(save=True) as settings:
+            value = settings.get(F_VALIDATE, True)
+            settings.set(F_VALIDATE, not value)
+
+    def is_enabled(self):
+        return self.view.match_selector(0, "source.python")
+
+    def is_checked(self):
+        with load_settings() as settings:
+            return settings.get(F_VALIDATE, True)
 
 
 class PytoolsSetAbsoluteimportCommand(sublime_plugin.TextCommand):

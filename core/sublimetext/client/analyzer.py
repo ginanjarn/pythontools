@@ -30,3 +30,22 @@ def get_diagnostic(path: str) -> "ResponseMessage":
     response = request(message.to_rpc(), timeout=180)
     logger.debug(response)
     return ResponseMessage.from_rpc(response)
+
+
+def validate(path: str) -> "ResponseMessage":
+    """get diagnostic data
+
+    Raises:
+        InvalidInput
+        InvalidResponse
+        ServerOffline
+    """
+
+    message = RequestMessage.builder(generate_id(), "textDocument.validate")
+    message.params = {
+        "uri": path,
+    }
+    logger.debug(message)
+    response = request(message.to_rpc(), timeout=180)
+    logger.debug(response)
+    return ResponseMessage.from_rpc(response)
