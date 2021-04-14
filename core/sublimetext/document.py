@@ -59,7 +59,9 @@ def open_link(view: "sublime.View", link: str) -> None:
     path = "{mod_path}:{line}:{character}".format(
         mod_path=view_path if link["uri"] is None else link["uri"],
         line=0 if link["location"]["line"] is None else link["location"]["line"],
-        character=0 if link["location"]["character"] is None else link["location"]["character"] + 1,
+        character=0
+        if link["location"]["character"] is None
+        else link["location"]["character"] + 1,
     )
     return view.window().open_file(path, sublime.ENCODED_POSITION)
 

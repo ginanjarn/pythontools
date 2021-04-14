@@ -272,13 +272,11 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     def run_server(self, python_path):
         """run server thread"""
 
+        plugin_path = os.path.dirname(os.path.abspath(__file__))
         activate_path = interpreter.find_activate(python_path)
         env_path = interpreter.find_environment(python_path)
 
-        server_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "core", "server", "pytools",
-        )
-
+        server_path = os.path.join(plugin_path, "core", "server", "pytools",)
         activate_path = [path for path in (activate_path, env_path) if path]
 
         try:
