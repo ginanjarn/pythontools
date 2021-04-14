@@ -525,9 +525,14 @@ class Event(sublime_plugin.ViewEventListener):
 
         content, link = None, None  # cache holder
 
+        # is updating popup content
+        is_updating = False
+
         if self.temp_docstring_src == source:
             logger.debug("use cached docstring : %s", self.cached_docstring)
             content, link = self.cached_docstring
+
+            is_updating = True
 
         else:
             try:
@@ -572,12 +577,12 @@ class Event(sublime_plugin.ViewEventListener):
                 self.decorate(content),
                 location,
                 lambda _: document.open_link(view, link),
+                update=is_updating,
             )
 
     def on_hover(self, point, hover_zone):
         """on_hover event"""
 
-        logger.info("on hover")
         view = self.view
 
         if all(
@@ -588,6 +593,7 @@ class Event(sublime_plugin.ViewEventListener):
                 hover_zone == sublime.HOVER_TEXT,
             ]
         ):
+            logger.info("on get documentation")
             if not SERVER_ONLINE:
                 view.window().run_command("pytools_runserver")
                 return
@@ -602,11 +608,12 @@ class Event(sublime_plugin.ViewEventListener):
             [
                 valid_source(view),
                 valid_attribute(view, point),
-                feature_enabled(F_DIAGNOSTIC),
+                any([feature_enabled(F_DIAGNOSTIC), feature_enabled(F_VALIDATE),]),
                 hover_zone == sublime.HOVER_GUTTER,
                 DIAGNOSTICS,
             ]
         ):
+            logger.info("on show diagnostic")
             row, _ = view.rowcol(point)
             if self.cached_diagnostic:
                 content = self.cached_diagnostic.get(row)
@@ -618,7 +625,9 @@ class Event(sublime_plugin.ViewEventListener):
                 logger.debug("loaded : %s", content)
 
             if content:  # any content
-                document.show_popup(view, self.decorate(content), point, callback=None)
+                document.show_popup(
+                    view, self.decorate(content), point, callback=None, update=True
+                )
 
     def clear_cached_diagnostic(self):
         if self.cached_diagnostic:

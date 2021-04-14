@@ -28,17 +28,25 @@ def show_completions(view: "sublime.View") -> None:
 
 
 def show_popup(
-    view: "sublime.View", content: str, location: int, callback: "Callable[[str],None]"
+    view: "sublime.View",
+    content: str,
+    location: int,
+    callback: "Callable[[str],None]",
+    update: bool = False,
 ) -> None:
     """Open popup"""
 
-    view.show_popup(
-        content,
-        sublime.HIDE_ON_MOUSE_MOVE_AWAY | sublime.COOPERATE_WITH_AUTO_COMPLETE,
-        location=location,
-        max_width=1024,
-        on_navigate=callback,
-    )
+    if update and view.is_popup_visible():
+        view.update_popup(content)
+
+    else:
+        view.show_popup(
+            content,
+            sublime.HIDE_ON_MOUSE_MOVE_AWAY | sublime.COOPERATE_WITH_AUTO_COMPLETE,
+            location=location,
+            max_width=1024,
+            on_navigate=callback,
+        )
 
 
 def open_link(view: "sublime.View", link: str) -> None:
