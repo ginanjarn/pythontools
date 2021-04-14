@@ -17,6 +17,7 @@ W_ABSOLUTE_IMPORT = "absolute_import"
 def load_settings(save=False):
     sublime_settings = sublime.load_settings(SETTINGS_BASENAME)
     yield sublime_settings
+
     if save:
         sublime.save_settings(SETTINGS_BASENAME)
 
@@ -26,9 +27,6 @@ class PytoolsSetAutocompleteCommand(sublime_plugin.TextCommand):
         with load_settings(save=True) as settings:
             value = settings.get(F_AUTOCOMPLETE, True)
             settings.set(F_AUTOCOMPLETE, not value)
-
-    def is_enabled(self):
-        return self.view.match_selector(0, "source.python")
 
     def is_checked(self):
         with load_settings() as settings:
@@ -41,9 +39,6 @@ class PytoolsSetDocumentationCommand(sublime_plugin.TextCommand):
             value = settings.get(F_DOCUMENTATION, True)
             settings.set(F_DOCUMENTATION, not value)
 
-    def is_enabled(self):
-        return self.view.match_selector(0, "source.python")
-
     def is_checked(self):
         with load_settings() as settings:
             return settings.get(F_DOCUMENTATION, True)
@@ -54,9 +49,6 @@ class PytoolsSetDocumentformattingCommand(sublime_plugin.TextCommand):
         with load_settings(save=True) as settings:
             value = settings.get(F_DOCUMENT_FORMATTING, True)
             settings.set(F_DOCUMENT_FORMATTING, not value)
-
-    def is_enabled(self):
-        return self.view.match_selector(0, "source.python")
 
     def is_checked(self):
         with load_settings() as settings:
@@ -69,9 +61,6 @@ class PytoolsSetDiagnosticCommand(sublime_plugin.TextCommand):
             value = settings.get(F_DIAGNOSTIC, True)
             settings.set(F_DIAGNOSTIC, not value)
 
-    def is_enabled(self):
-        return self.view.match_selector(0, "source.python")
-
     def is_checked(self):
         with load_settings() as settings:
             return settings.get(F_DIAGNOSTIC, True)
@@ -83,9 +72,6 @@ class PytoolsSetValidateCommand(sublime_plugin.TextCommand):
             value = settings.get(F_VALIDATE, True)
             settings.set(F_VALIDATE, not value)
 
-    def is_enabled(self):
-        return self.view.match_selector(0, "source.python")
-
     def is_checked(self):
         with load_settings() as settings:
             return settings.get(F_VALIDATE, True)
@@ -96,9 +82,6 @@ class PytoolsSetAbsoluteimportCommand(sublime_plugin.TextCommand):
         with load_settings(save=True) as settings:
             value = settings.get(W_ABSOLUTE_IMPORT, True)
             settings.set(W_ABSOLUTE_IMPORT, not value)
-
-    def is_enabled(self):
-        return self.view.match_selector(0, "source.python")
 
     def is_checked(self):
         with load_settings() as settings:
