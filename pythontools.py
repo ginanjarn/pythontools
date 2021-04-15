@@ -8,7 +8,7 @@ import logging
 import os
 import signal
 import time
-from .core.sublimetext import client
+from .core import client
 from .core.sublimetext import document
 from .core.sublimetext import interpreter
 
