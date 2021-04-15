@@ -28,17 +28,25 @@ def show_completions(view: "sublime.View") -> None:
 
 
 def show_popup(
-    view: "sublime.View", content: str, location: int, callback: "Callable[[str],None]"
+    view: "sublime.View",
+    content: str,
+    location: int,
+    callback: "Callable[[str],None]",
+    update: bool = False,
 ) -> None:
     """Open popup"""
 
-    view.show_popup(
-        content,
-        sublime.HIDE_ON_MOUSE_MOVE_AWAY | sublime.COOPERATE_WITH_AUTO_COMPLETE,
-        location=location,
-        max_width=1024,
-        on_navigate=callback,
-    )
+    if update and view.is_popup_visible():
+        view.update_popup(content)
+
+    else:
+        view.show_popup(
+            content,
+            sublime.HIDE_ON_MOUSE_MOVE_AWAY | sublime.COOPERATE_WITH_AUTO_COMPLETE,
+            location=location,
+            max_width=1024,
+            on_navigate=callback,
+        )
 
 
 def open_link(view: "sublime.View", link: str) -> None:
@@ -49,9 +57,11 @@ def open_link(view: "sublime.View", link: str) -> None:
 
     view_path = os.path.abspath(view.file_name())
     path = "{mod_path}:{line}:{character}".format(
-        mod_path=view_path if link["path"] is None else link["path"],
-        line=0 if link["line"] is None else link["line"],
-        character=0 if link["character"] is None else link["character"] + 1,
+        mod_path=view_path if link["uri"] is None else link["uri"],
+        line=0 if link["location"]["line"] is None else link["location"]["line"],
+        character=0
+        if link["location"]["character"] is None
+        else link["location"]["character"] + 1,
     )
     return view.window().open_file(path, sublime.ENCODED_POSITION)
 
@@ -82,7 +92,6 @@ class Update:
     @classmethod
     def from_rpc(cls, view: sublime.View, update: "Dict[str, Any]") -> "Update":
         """load from rpc"""
-        # type: Callable[sublime.View, Dict[str, Any]] -> "Update"
 
         start_line = update["range"]["start"]["line"]
         start_column = update["range"]["start"]["character"]
@@ -91,8 +100,8 @@ class Update:
         new_text = update["newText"]
 
         logger.debug("%s, %s, %s, %s", start_line, start_column, end_line, end_column)
-        start = view.text_point(start_line - 1, start_column)
-        end = view.text_point(end_line - 1, end_column)
+        start = view.text_point(start_line, start_column)
+        end = view.text_point(end_line, end_column)
         region = sublime.Region(start, end)
         return cls(region, new_text)
 
@@ -144,3 +153,116 @@ def show_input_panel(
         on_change=None,
         on_cancel=None,
     )
+
+
+# Severity
+ERROR = 1
+WARNING = 2
+INFO = 3
+HINT = 4
+
+
+class Mark:
+    """diagnostic mark item"""
+
+    def __init__(self, view_id, severity, region, message):
+        self.view_id = view_id
+        self.severity = severity
+        self.region = region
+        self.message = message
+
+    def __repr__(self):
+        return "view_id : {view_id}, severity : {severity}, region : {region}, message : {message}".format(
+            view_id=self.view_id,
+            severity=self.severity,
+            region=self.region,
+            message=self.message,
+        )
+
+    @classmethod
+    def from_rpc(cls, view, message):
+        try:
+            pos = view.text_point(message["line"] - 1, message["column"])
+            region = view.line(pos) if message["column"] == 0 else view.word(pos)
+            severity = message["severity"]
+            msg = "%s: %s" % (message["code"], message["message"])
+        except KeyError:
+            return None
+        else:
+            return cls(view.id(), severity, region, msg)
+
+
+SCOPE = {1: "Invalid", 2: "Invalid", 3: "Comment", 4: "Comment"}
+
+ICON_PREFIX = "Packages/pythontools/icons/%s"
+ICON = {
+    1: ICON_PREFIX % "error.png",
+    2: ICON_PREFIX % "warning.png",
+    3: ICON_PREFIX % "info.png",
+    4: ICON_PREFIX % "info.png",
+}
+
+FLAGS = {
+    1: sublime.DRAW_NO_OUTLINE,
+    2: sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublime.DRAW_SOLID_UNDERLINE,
+    3: sublime.DRAW_NO_FILL
+    | sublime.DRAW_NO_OUTLINE
+    | sublime.DRAW_SOLID_UNDERLINE
+    | sublime.HIDE_ON_MINIMAP,
+    4: sublime.DRAW_NO_FILL
+    | sublime.DRAW_NO_OUTLINE
+    | sublime.DRAW_SQUIGGLY_UNDERLINE
+    | sublime.HIDE_ON_MINIMAP,
+}
+
+KEY_FORMAT = "pytools:%s"
+
+
+def add_regions(view: sublime.View, key, regions, scope, icon, flags):
+    view.add_regions(
+        key=key, regions=list(regions), scope=scope, icon=icon, flags=flags
+    )
+
+
+def erase_regions(view: sublime.View, key):
+    view.erase_regions(key)
+
+
+def apply_diagnostics(
+    view: sublime.View, marks: "Iterable[Mark]",
+):
+
+    for severity in [ERROR, WARNING, INFO, HINT]:
+
+        def filter_spect(mark: Mark):
+            return mark.severity == severity and mark.view_id == view.id()
+
+        filtered_mark = filter(filter_spect, marks)
+        # logger.debug(list(filtered_mark))
+        regions = map(lambda mark: mark.region, filtered_mark)
+        # logger.debug(list(regions))
+
+        key = KEY_FORMAT % (severity)
+        erase_regions(view, key)
+        add_regions(
+            view, key, regions, SCOPE[severity], ICON[severity], FLAGS[severity]
+        )
+
+
+def diagnostic_message(
+    diagnostics: "List[Mark]", view: sublime.View
+) -> "Dict[int, str]":
+
+    temp_message = {}
+    for mark in diagnostics:
+        # mark: Mark = mark
+
+        row, _ = view.rowcol(mark.region.a)
+        message = mark.message
+
+        if row in temp_message:
+            temp_message[row] = "<br>".join([temp_message[row], message])
+        else:
+            temp_message[row] = message
+
+    return temp_message

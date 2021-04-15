@@ -4,6 +4,8 @@
 from typing import Dict, Any, List, Iterator
 import logging
 
+from api import rpc
+
 
 logger = logging.getLogger("formatting")
 # logger.setLevel(logging.DEBUG)
@@ -14,8 +16,10 @@ logger.addHandler(sh)
 
 
 try:
-    from jedi import Script, Project  # type: ignore
+    from jedi import Script, Project, preload_module  # type: ignore
     from jedi.api.classes import Completion  # type: ignore
+
+    preload_module(["numpy", "tensorflow", "wx"])
 
     class Completions(list):
         """completion list"""
@@ -24,7 +28,9 @@ try:
         """build rpc content"""
 
         for completion in completions:
-            yield {"label": completion.name_with_symbols, "type": completion.type}
+            yield rpc.CompletionItem.builder(
+                label=completion.name_with_symbols, type_=completion.type
+            )
 
     def to_rpc(completions: List[Completion]) -> List[Dict[str, Any]]:
         """convert completion results to rpc"""

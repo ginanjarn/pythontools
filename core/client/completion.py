@@ -1,8 +1,8 @@
-"""hover"""
+"""completion"""
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request
+from .remote import RequestMessage, ResponseMessage, request, generate_id
 
 
 logger = logging.getLogger(__name__)
@@ -13,8 +13,8 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-def fetch_documentation(src: str, line: int, character: int) -> "ResponseMessage":
-    """get documentation
+def fetch_completion(src: str, line: int, character: int) -> "ResponseMessage":
+    """get completion data
 
     Raises:
         InvalidInput
@@ -22,12 +22,11 @@ def fetch_documentation(src: str, line: int, character: int) -> "ResponseMessage
         ServerOffline
     """
 
-    message = RequestMessage("textDocument.hover")
+    message = RequestMessage.builder(generate_id(), "textDocument.completion")
     message.params = {
         "uri": src,
         "location": {"line": line, "character": character},
     }
-    logger.debug(message)
-    response = request(message.to_rpc())
+    response = request(message.to_rpc(), timeout=5)
     logger.debug(response)
     return ResponseMessage.from_rpc(response)
