@@ -139,7 +139,10 @@ BUFFER_URI = None
 
 class ServerHandler(socketserver.BaseRequestHandler):
     def __init__(
-        self, request: socket.socket, client_address: Tuple[str, int], server: Any
+        self,
+        request: socket.socket,
+        client_address: Tuple[str, int],
+        server: socketserver.TCPServer,
     ):
         self.request = request
         self.client_address = client_address
