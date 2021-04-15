@@ -28,17 +28,25 @@ def show_completions(view: "sublime.View") -> None:
 
 
 def show_popup(
-    view: "sublime.View", content: str, location: int, callback: "Callable[[str],None]"
+    view: "sublime.View",
+    content: str,
+    location: int,
+    callback: "Callable[[str],None]",
+    update: bool = False,
 ) -> None:
     """Open popup"""
 
-    view.show_popup(
-        content,
-        sublime.HIDE_ON_MOUSE_MOVE_AWAY | sublime.COOPERATE_WITH_AUTO_COMPLETE,
-        location=location,
-        max_width=1024,
-        on_navigate=callback,
-    )
+    if update and view.is_popup_visible():
+        view.update_popup(content)
+
+    else:
+        view.show_popup(
+            content,
+            sublime.HIDE_ON_MOUSE_MOVE_AWAY | sublime.COOPERATE_WITH_AUTO_COMPLETE,
+            location=location,
+            max_width=1024,
+            on_navigate=callback,
+        )
 
 
 def open_link(view: "sublime.View", link: str) -> None:
@@ -49,9 +57,11 @@ def open_link(view: "sublime.View", link: str) -> None:
 
     view_path = os.path.abspath(view.file_name())
     path = "{mod_path}:{line}:{character}".format(
-        mod_path=view_path if link["path"] is None else link["path"],
-        line=0 if link["line"] is None else link["line"],
-        character=0 if link["character"] is None else link["character"] + 1,
+        mod_path=view_path if link["uri"] is None else link["uri"],
+        line=0 if link["location"]["line"] is None else link["location"]["line"],
+        character=0
+        if link["location"]["character"] is None
+        else link["location"]["character"] + 1,
     )
     return view.window().open_file(path, sublime.ENCODED_POSITION)
 

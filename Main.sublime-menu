@@ -28,8 +28,17 @@
                 "id": "features"
               },
               {
+                "caption": "-",
+                "id": "features"
+              },
+              {
                 "caption": "Diagnostics",
                 "command": "pytools_set_diagnostic",
+                "id": "features"
+              },
+              {
+                "caption": "Validate on save",
+                "command": "pytools_set_validate",
                 "id": "features"
               },
               {

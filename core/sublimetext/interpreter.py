@@ -16,7 +16,7 @@ def save_settings(key: str, value: "Any") -> None:
 
 PYTHON_BIN = "python.exe" if os.name == "nt" else os.path.join("bin", "python")
 PATH_BIN = "Scripts" if os.name == "nt" else "bin"
-ACTIVATE_BIN = "Scripts\\activate" if os.name == "nt" else r"bin/activate"
+ACTIVATE_BIN = os.path.join(PATH_BIN, "activate")
 
 
 def ispython_path(path: str) -> bool:

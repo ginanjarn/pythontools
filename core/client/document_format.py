@@ -1,8 +1,8 @@
-"""completion"""
+"""document format"""
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request
+from .remote import RequestMessage, ResponseMessage, request, generate_id
 
 
 logger = logging.getLogger(__name__)
@@ -13,8 +13,8 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-def fetch_completion(src: str, line: int, character: int) -> "ResponseMessage":
-    """get completion data
+def format_code(src: str) -> "ResponseMessage":
+    """prettify code
 
     Raises:
         InvalidInput
@@ -22,11 +22,8 @@ def fetch_completion(src: str, line: int, character: int) -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage("textDocument.completion")
-    message.params = {
-        "uri": src,
-        "location": {"line": line, "character": character},
-    }
-    response = request(message.to_rpc())
+    message = RequestMessage.builder(generate_id(), "textDocument.formatting")
+    message.params = {"uri": src}
+    response = request(message.to_rpc(), timeout=30)
     logger.debug(response)
     return ResponseMessage.from_rpc(response)
