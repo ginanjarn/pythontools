@@ -6,7 +6,6 @@ import sublime_plugin  # pylint: disable=import-error
 import threading
 import logging
 import os
-import signal
 import time
 from .core import client
 from .core.sublimetext import document
@@ -14,7 +13,7 @@ from .core.sublimetext import interpreter
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
 sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
 sh.setLevel(logging.DEBUG)
@@ -234,7 +233,6 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
             logger.error("set interpreter", exc_info=True)
 
 
-# FIXME: while server stuck will make start server --------------------------------------
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     """Run server command"""
 
