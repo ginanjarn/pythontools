@@ -403,6 +403,8 @@ class Event(sublime_plugin.ViewEventListener):
         self.temp_completion_src = ""
         self.cached_docstring = None
         self.temp_docstring_src = ""
+
+        # cache_diagnostic hold filtered diagnostic result for active view
         self.cached_diagnostic = None
 
     @staticmethod
@@ -636,6 +638,9 @@ class Event(sublime_plugin.ViewEventListener):
 
     def on_activated(self):
         self.clear_cached_diagnostic()
+
+    def on_pre_close(self):
+        self.view.run_command("pytools_clear_diagnostic")
 
     def on_pre_save_async(self) -> None:
         self.clear_cached_diagnostic()
