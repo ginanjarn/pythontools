@@ -7,6 +7,7 @@ import threading
 import logging
 import os
 import time
+from functools import wraps
 from .core import client
 from .core.sublimetext import document
 from .core.sublimetext import interpreter
@@ -33,6 +34,7 @@ def instance_lock(func):
     prevent run multiple instance
     """
 
+    @wraps(func)
     def wrapper(*args, **kwargs):
         if INSTANCE_LOCK.locked():
             logger.debug("instance locked")
@@ -55,6 +57,7 @@ def boundary_lock(func):
     prevent multiple request from outer context
     """
 
+    @wraps(func)
     def wrapper(*args, **kwargs):
         with BOUNDARY_LOCK:
             return func(*args, **kwargs)
