@@ -398,36 +398,31 @@ class ServerHandler(socketserver.BaseRequestHandler):
             logger.debug("results : %s", results)
             self.request.sendall(results)
 
-            if TERMINATE:
-                os.kill(os.getpid(), signal.SIGTERM)
-
-        except Exception as err:
+        except Exception:
             logger.exception("handling socket exception", exc_info=True)
+
+    def finish(self):
+        if TERMINATE:
+            os.kill(os.getpid(), signal.SIGTERM)
 
 
 def handle_exit(num, frame) -> None:
     sys.exit(0)
 
 
-ADDRESS = ("127.0.0.1", 8088)
-
-
 def main():
 
+    signal.signal(signal.SIGTERM, handle_exit)
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--port", help="socket port")
+    parser.add_argument("-p", "--port", help="socket port", type=int, default=8088)
     args = parser.parse_args()
 
-    global ADDRESS
-    if args.port:
-        ADDRESS = ("127.0.0.1", int(args.port))
+    address = ("127.0.0.1", args.port)
 
     try:
-        signal.signal(signal.SIGTERM, handle_exit)
-
-        print(f">>> Server running at {ADDRESS}.\n Press [CTRL+C] to stop.\n")
-
-        server = socketserver.TCPServer(ADDRESS, ServerHandler)
+        print(f">>> Server running at {address}.\n Press [CTRL+C] to stop.\n")
+        server = socketserver.TCPServer(address, ServerHandler)
         server.serve_forever()
 
     except KeyboardInterrupt:
