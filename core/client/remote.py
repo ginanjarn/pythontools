@@ -1,7 +1,7 @@
 """remote handler"""
 
 
-from re import findall
+import re
 import os
 import socket
 import subprocess
@@ -17,42 +17,55 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-RPC_SEPARATOR = b"\r\n\r\n"
+class TransactionMessage:
+    def __init__(self, content, encoding="utf-8", headers=None):
+        self._content_encoded = content.encode(encoding)
+        self.encoding = encoding
+        self._headers = {
+            "Content-Length": len(self._content_encoded),
+            "encoding": self.encoding,
+        }
 
+    @property
+    def content(self):
+        return self._content_encoded.decode(self.encoding)
 
-def get_content_length(header: bytes):
-    """get content length"""
+    def to_bytes(self):
+        headers = []
+        for key, value in self._headers.items():
+            headers.append(
+                "{key}: {value}".format(key=key, value=value).encode(self.encoding)
+            )
 
-    found = findall(r"Content-Length: (\d*)\s?", header.decode("ascii"))
-    if not any(found):
-        raise ValueError("unable to get Content-Length in header")
+        merged_headers = b"\r\n".join(headers)
+        return b"\r\n\r\n".join([merged_headers, self._content_encoded])
 
-    return int(found[0])
+    @staticmethod
+    def parse_header(header: bytes) -> dict:
+        parsed = {}
+        for item in header.splitlines():
+            decoded = item.decode("ascii")
+            matches = re.findall(r"(.*): (.*)\s?", decoded)
+            for match in matches:
+                parsed[match[0]] = match[1]
 
+        return parsed
 
-def get_rpc_content(message: bytes) -> str:
-    separated = message.split(RPC_SEPARATOR)
+    @classmethod
+    def from_bytes(cls, data: bytes):
+        header, body = data.split(b"\r\n\r\n")
 
-    if len(separated) != 2:
-        raise ValueError("unable to separate header and body")
+        parsed_header = TransactionMessage.parse_header(header)
+        required_size = int(parsed_header.get("Content-Length"))
+        if len(body) != required_size:
+            raise ValueError(
+                "content corrupted, want=%d, expected=%d" % (required_size, len(body))
+            )
 
-    content_length = get_content_length(separated[0])
-
-    if len(separated[1]) != content_length:
-        raise ValueError(
-            "invalid content length, required : %s, expected : %s"
-            % (content_length, len(separated[1]))
+        return cls(
+            content=body.decode(parsed_header.get("encoding", "utf-8")),
+            headers=parsed_header,
         )
-
-    return separated[1].decode("utf-8")
-
-
-def create_rpc_content(message: str) -> bytes:
-    content_encoded = message.encode("utf-8")
-    content_length = len(content_encoded)
-    header = bytes("Content-Length: %d" % content_length, "ascii")
-
-    return b"".join([header, RPC_SEPARATOR, content_encoded])
 
 
 # fmt: off
@@ -193,7 +206,7 @@ def request(
             conn.connect((host, port))
 
             logger.debug(message)
-            conn.sendall(create_rpc_content(message))
+            conn.sendall(TransactionMessage(message).to_bytes())
 
             downloaded = []
             buf_size = 4096
@@ -205,7 +218,7 @@ def request(
                 if len(data) < buf_size:
                     break
             logger.debug(downloaded)
-            return get_rpc_content(b"".join(downloaded))
+            return TransactionMessage.from_bytes(b"".join(downloaded)).content
 
     except socket.timeout as err:
         return ResponseMessage.builder("-1", error=repr(err)).to_rpc()

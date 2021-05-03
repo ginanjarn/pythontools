@@ -8,10 +8,10 @@ import socketserver
 import socket
 import sys
 import signal
+import re
 
 from importlib.util import find_spec
-from re import findall
-from typing import Dict, List, Any, Optional, Tuple, Text
+from typing import Any, Tuple
 
 from api import rpc
 from api import completion, hover, document_formatting, rename, analyzer
@@ -29,50 +29,53 @@ logger.addHandler(sh)
 logger.addHandler(fh)
 
 
-RPC_SEPARATOR = b"\r\n\r\n"
+class TransactionMessage:
+    def __init__(self, content, encoding="utf-8", headers=None):
+        self._content_encoded = content.encode(encoding)
+        self.encoding = encoding
+        self._headers = {
+            "Content-Length": len(self._content_encoded),
+            "encoding": self.encoding,
+        }
 
+    @property
+    def content(self):
+        return self._content_encoded.decode(self.encoding)
 
-def get_content_length(header: bytes) -> int:
-    """get content length
+    def to_bytes(self):
+        headers = []
+        for key, value in self._headers.items():
+            headers.append(f"{key}: {value}".encode(self.encoding))
 
-    Raises:
-        ValueError if Content-Length not found in header
-    """
+        merged_headers = b"\r\n".join(headers)
+        return b"\r\n\r\n".join([merged_headers, self._content_encoded])
 
-    found = findall(r"Content-Length: (\d*)\s?", header.decode("ascii"))
-    if not any(found):
-        raise ValueError("unable to get Content-Length in header")
+    @staticmethod
+    def parse_header(header: bytes) -> dict:
+        parsed = {}
+        for item in header.splitlines():
+            decoded = item.decode("ascii")
+            matches = re.findall(r"(.*): (.*)\s?", decoded)
+            for match in matches:
+                parsed[match[0]] = match[1]
 
-    return int(found[0])
+        return parsed
 
+    @classmethod
+    def from_bytes(cls, data: bytes):
+        header, body = data.split(b"\r\n\r\n")
 
-def get_rpc_content(message: bytes) -> str:
-    """get content from rpc message"""
+        parsed_header = TransactionMessage.parse_header(header)
+        required_size = int(parsed_header.get("Content-Length"))
+        if len(body) != required_size:
+            raise ValueError(
+                "content corrupted, want=%d, expected=%d" % (required_size, len(body))
+            )
 
-    separated = message.split(RPC_SEPARATOR)
-
-    if len(separated) != 2:
-        raise ValueError("unable to separate header and body")
-
-    content_length = get_content_length(separated[0])
-
-    if len(separated[1]) != content_length:
-        raise ValueError(
-            "invalid content length, required : %s, expected : %s"
-            % (content_length, len(separated[1]))
+        return cls(
+            content=body.decode(parsed_header.get("encoding", "utf-8")),
+            headers=parsed_header,
         )
-
-    return separated[1].decode("utf-8")
-
-
-def create_rpc_content(message: str) -> bytes:
-    """build rpc message"""
-
-    content_encoded = message.encode("utf-8")
-    content_length = len(content_encoded)
-    header = bytes("Content-Length: %d" % content_length, "ascii")
-
-    return b"".join([header, RPC_SEPARATOR, content_encoded])
 
 
 # Error classes ++++++++++++++++++++++++++++++++++++++++
@@ -351,7 +354,10 @@ class ServerHandler(socketserver.BaseRequestHandler):
         try:
             # parsing requestcontent
             try:
-                req_message = rpc.RequestMessage.from_rpc(get_rpc_content(message))
+                req_message = rpc.RequestMessage.from_rpc(
+                    TransactionMessage.from_bytes(message).content
+                )
+
             except json.JSONDecodeError as err:
                 raise InvalidRPCMessage(err) from err
 
@@ -360,7 +366,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         except Exception as err:
             logger.debug("loading message error", exc_info=True)
             resp_message.error = repr(err)
-            return create_rpc_content(resp_message.to_rpc())
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
 
         try:
             # processing
@@ -372,11 +378,11 @@ class ServerHandler(socketserver.BaseRequestHandler):
         except Exception as err:
             logger.exception("process exception : %s", err)
             resp_message.error = repr(err)
-            return create_rpc_content(resp_message.to_rpc())
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
 
         else:
             logger.debug(resp_message)
-            return create_rpc_content(resp_message.to_rpc())
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
 
     def handle(self) -> None:
         """server handle"""
