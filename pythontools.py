@@ -306,22 +306,27 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             logger.error("run server", exc_info=True)
 
         else:
+            # wait for socket ready
+            time.sleep(1)
+
             # continue initialize if server already running
             self.initialize_server()
 
     @staticmethod
-    def initialize_server():
+    def initialize_server(timeout=10):
         """try to initialize server max 10 times trial"""
 
-        for trial in range(10):
+        terminate_time = time.time() + timeout
+
+        while time.time() < terminate_time:
             if INITIALIZED:
                 return
 
-            logger.debug("try initialize : <%s>", trial)
+            logger.debug("try initialize")
             initialize()
 
             if not INITIALIZED:
-                time.sleep(1)
+                time.sleep(0.5)
 
         # set server error if failed 10 times initialize
         global SERVER_ERROR
