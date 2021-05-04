@@ -313,24 +313,34 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             self.initialize_server()
 
     @staticmethod
-    def initialize_server(timeout=10):
-        """try to initialize server max 10 times trial"""
+    def initialize_server(timeout=30):
+        """try to initialize server"""
 
-        terminate_time = time.time() + timeout
+        def try_initialize():
+            terminate_time = time.time() + timeout
 
-        while time.time() < terminate_time:
-            if INITIALIZED:
-                return
+            while time.time() < terminate_time:
+                if INITIALIZED:
+                    # terminate
+                    return
 
-            logger.debug("try initialize")
-            initialize()
+                logger.debug("try initialize")
+                initialize()
 
-            if not INITIALIZED:
-                time.sleep(0.5)
+                # continue
+                if not INITIALIZED:
+                    time.sleep(0.5)
 
-        # set server error if failed 10 times initialize
-        global SERVER_ERROR
-        SERVER_ERROR = True
+            # raise TimeoutError if not terminated
+            raise TimeoutError("timedout")
+
+        try:
+            try_initialize()
+        except TimeoutError:
+            # set server error if failed initialize
+            global SERVER_ERROR
+            SERVER_ERROR = True
+            logger.error("ServerError: unable to initialize")
 
 
 class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
