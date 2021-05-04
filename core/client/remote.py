@@ -1,6 +1,7 @@
 """remote handler"""
 
 
+import io
 import re
 import os
 import socket
@@ -208,17 +209,18 @@ def request(
             logger.debug(message)
             conn.sendall(TransactionMessage(message).to_bytes())
 
-            downloaded = []
+            downloaded = io.BytesIO()
             buf_size = 4096
 
             while True:
                 data = conn.recv(buf_size)
-                downloaded.append(data)
+                downloaded.write(data)
 
                 if len(data) < buf_size:
                     break
-            logger.debug(downloaded)
-            return TransactionMessage.from_bytes(b"".join(downloaded)).content
+
+            logger.debug(downloaded.getvalue())
+            return TransactionMessage.from_bytes(downloaded.getvalue()).content
 
     except socket.timeout as err:
         return ResponseMessage.builder("-1", error=repr(err)).to_rpc()

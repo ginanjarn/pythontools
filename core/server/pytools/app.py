@@ -1,6 +1,7 @@
 """main server"""
 
 import argparse
+import io
 import json
 import logging
 import os
@@ -389,16 +390,16 @@ class ServerHandler(socketserver.BaseRequestHandler):
 
         print(" request from :", self.client_address)
 
-        received = []
+        downloaded = io.BytesIO()
 
         try:
             while True:
                 chunk = self.request.recv(BUFF_SIZE)
-                received.append(chunk)
+                downloaded.write(chunk)
                 if len(chunk) < BUFF_SIZE:
                     break
 
-            request_message = b"".join(received)
+            request_message = downloaded.getvalue()
             logger.debug("request_message : %s", request_message)
             results = self.handle_request(request_message)
             logger.debug("results : %s", results)
@@ -406,6 +407,9 @@ class ServerHandler(socketserver.BaseRequestHandler):
 
         except Exception:
             logger.exception("handling socket exception", exc_info=True)
+
+        finally:
+            downloaded.close()
 
     def finish(self):
         if TERMINATE:
