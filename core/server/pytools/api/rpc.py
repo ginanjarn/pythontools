@@ -2,6 +2,7 @@
 
 
 from typing import Dict, Any
+from io import StringIO
 import json
 
 # fmt: off
@@ -313,11 +314,17 @@ class TextEdit(dict):
         return self[TextEdit.HOLDER_KEY]
 
     def accumulate_new_text(self, new_text):
-        if not self.get(TextEdit.HOLDER_KEY):
-            self[TextEdit.HOLDER_KEY] = [new_text]
+        if TextEdit.HOLDER_KEY in self:
+            self[TextEdit.HOLDER_KEY].write(f"\n{new_text}")
         else:
-            self[TextEdit.HOLDER_KEY].append(new_text)
+            text = StringIO()
+            text.write(new_text)
+            self[TextEdit.HOLDER_KEY] = text
 
     def build_new_text(self):
-        self[NEW_TEXT] = "\n".join(self[TextEdit.HOLDER_KEY])
+        if TextEdit.HOLDER_KEY not in self:
+            raise ValueError("nothing builded")
+
+        self[NEW_TEXT] = self[TextEdit.HOLDER_KEY].getvalue()
+        self[TextEdit.HOLDER_KEY].close()
         del self[TextEdit.HOLDER_KEY]
