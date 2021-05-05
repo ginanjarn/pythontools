@@ -208,18 +208,6 @@ class ServerHandler(socketserver.BaseRequestHandler):
         else:
             return results
 
-    # def text_change(self, params: rpc.Params):
-    #     """text change only accept full document changes"""
-
-    #     global BUFFER
-
-    #     try:
-    #         BUFFER = params["newText"]
-    #     except (ValueError, TypeError) as err:
-    #         raise InvalidParams(err)
-    #     else:
-    #         return None
-
     # features function +++++++++++++++++++++++++++++++++++++++++
     def complete(self, params: rpc.Params) -> Any:
         try:
