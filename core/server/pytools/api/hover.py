@@ -22,9 +22,6 @@ try:
 
     preload_module(["numpy", "tensorflow", "wx"])
 
-    class Documentations(list):
-        """documentation list"""
-
     def escape_space(doc: str) -> str:
         """replace 'double space' -> '&nbsp;'"""
         return doc.replace("  ", "&nbsp;&nbsp;")
@@ -71,18 +68,15 @@ try:
 
         return build_rpc(helps[0]) if helps else None
 
-    def get_documentation(
-        source: str, *, line: int, column: int, project: Project = None
-    ) -> Documentations:
-        """complete script at following pos(line, column)
+    class Documentation:
+        def __init__(
+            self, source: str, *, line: int, column: int, project: Project = None
+        ):
+            script = Script(source, project=project)
+            self.candidates = script.help(line, column)
 
-        Raises:
-            ValueError: column > len(line_content)
-        """
-
-        script = Script(code=source, project=project)
-        results = script.help(line=line, column=column)
-        return Documentations(results)
+        def to_rpc(self):
+            return to_rpc(self.candidates)
 
 
 except ImportError:

@@ -17,14 +17,11 @@ logger.addHandler(sh)
 
 try:
     from jedi import Script, Project, preload_module  # type: ignore
-    from jedi.api.classes import Completion  # type: ignore
+    from jedi.api.classes import Completion as JediCompletion  # type: ignore
 
     preload_module(["numpy", "tensorflow", "wx"])
 
-    class Completions(list):
-        """completion list"""
-
-    def build_rpc(completions: List[Completion]) -> Iterator[Dict[str, Any]]:
+    def build_rpc(completions: List[JediCompletion]) -> Iterator[Dict[str, Any]]:
         """build rpc content"""
 
         for completion in completions:
@@ -32,23 +29,20 @@ try:
                 label=completion.name_with_symbols, type_=completion.type
             )
 
-    def to_rpc(completions: List[Completion]) -> List[Dict[str, Any]]:
+    def to_rpc(completions: List[JediCompletion]) -> List[Dict[str, Any]]:
         """convert completion results to rpc"""
 
         return list(build_rpc(completions))
 
-    def complete(
-        source: str, *, line: int, column: int, project: Project = None
-    ) -> Completions:
-        """complete script at following pos(line, column)
+    class Completion:
+        def __init__(
+            self, source: str, *, line: int, column: int, project: Project = None
+        ):
+            script = Script(source, project=project)
+            self.candidates = script.complete(line, column)
 
-        Raises:
-            ValueError: column > len(line_content)
-        """
-
-        script = Script(code=source, project=project)
-        results = script.complete(line=line, column=column)
-        return Completions(results)
+        def to_rpc(self):
+            return to_rpc(self.candidates)
 
 
 except ImportError:

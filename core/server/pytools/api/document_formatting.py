@@ -20,9 +20,6 @@ logger.addHandler(sh)
 try:
     import black
 
-    class FormattingChanges(str):
-        """source changes"""
-
     def get_removed(line: str) -> Tuple[int, int]:
         """get diff removed line
 
@@ -128,7 +125,7 @@ try:
     def to_rpc(results: str, *, source: str) -> Dict[str, Any]:
         return Updates(old=source, new=results).build_rpc()
 
-    def format_with_black(source: str) -> FormattingChanges:
+    def format_with_black(source: str) -> str:
         mode = black.FileMode(
             target_versions=set(),
             is_pyi=False,
@@ -139,14 +136,15 @@ try:
             formatted = black.format_file_contents(source, fast=False, mode=mode)
         except black.NothingChanged:
             return source
-        return FormattingChanges(formatted)
+        return formatted
 
-    def format_document(source: str) -> FormattingChanges:
-        """format document"""
+    class DocumentFormatting:
+        def __init__(self, source: str):
+            self.source = source
+            self.candidates = format_with_black(source)
 
-        doc_changes = format_with_black(source)
-        logger.debug(doc_changes)
-        return FormattingChanges(doc_changes)
+        def to_rpc(self):
+            return to_rpc(self.candidates, source=self.source)
 
 
 except ImportError:

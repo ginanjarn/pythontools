@@ -235,10 +235,10 @@ class ServerHandler(socketserver.BaseRequestHandler):
             project = (
                 completion.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
             )
-            completions_candidate = completion.complete(
+            cmpl = completion.Completion(
                 path, line=line, column=column, project=project
             )
-            results = completion.to_rpc(completions_candidate)
+            results = cmpl.to_rpc()
 
         except Exception as err:
             raise InternalError(err) from err
@@ -259,10 +259,9 @@ class ServerHandler(socketserver.BaseRequestHandler):
             project = (
                 hover.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
             )
-            documentation_candidate = hover.get_documentation(
-                path, line=line, column=column, project=project
-            )
-            results = hover.to_rpc(documentation_candidate)
+
+            doc = hover.Documentation(path, line=line, column=column, project=project)
+            results = doc.to_rpc()
 
         except Exception as err:
             raise InternalError(err) from err
@@ -278,8 +277,9 @@ class ServerHandler(socketserver.BaseRequestHandler):
             raise InvalidParams(err) from err
 
         try:
-            format_result = document_formatting.format_document(src)
-            results = document_formatting.to_rpc(format_result, source=src)
+            formatted = document_formatting.DocumentFormatting(src)
+            results = formatted.to_rpc()
+
         except Exception as err:
             raise InternalError(err) from err
         else:
