@@ -226,14 +226,61 @@ def valid_attribute(view, pos):
 SERVER_ERROR = False
 
 
+def save_settings(key: str, value: "Any") -> None:
+    """save settings to SublimeText settings file"""
+
+    settings = sublime.load_settings("Pytools.sublime-settings")
+    settings.set(key, value)
+    sublime.save_settings("Pytools.sublime-settings")
+
+
 class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
     """Load python interpreter command"""
 
     def run(self):
         try:
-            interpreter.set_interpreter(self.window)
+            self.set_interpreter(self.window)
         except Exception:
             logger.error("set interpreter", exc_info=True)
+
+    @staticmethod
+    def set_interpreter(window: "sublime.Window") -> None:
+        """set python interpreter"""
+
+        sys_python = interpreter.find_python()
+        conda = interpreter.find_conda()
+        python_path = list(sys_python) + list(conda)
+        python_binary = [
+            os.path.join(path, interpreter.PYTHON_BIN) for path in python_path
+        ]
+
+        def input_path():
+            def save_input_settings(path):
+                if interpreter.ispython_path(path):
+                    save_settings("interpreter", path)
+
+            window.show_input_panel(
+                caption="python path",
+                initial_text="",
+                on_done=save_input_settings,
+                on_change=None,
+                on_cancel=None,
+            )
+
+        def select_interpreter(index):
+            if index < 0:
+                return  # cancel if index == -1
+
+            if index < len(python_path):
+                save_settings("interpreter", python_binary[index])
+            else:
+                input_path()
+
+        window.show_quick_panel(
+            items=python_binary + ["input path"],
+            on_select=select_interpreter,
+            flags=sublime.KEEP_OPEN_ON_FOCUS_LOST | sublime.MONOSPACE_FONT,
+        )
 
 
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
