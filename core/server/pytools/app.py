@@ -304,8 +304,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
             raise InvalidParams(err) from err
 
         try:
-            diagnostic = analyzer.lint(path=uri)
-            results = analyzer.to_rpc(diagnostic)
+            results = analyzer.lint(path=uri)
         except Exception as err:
             raise InternalError(err)
         else:
@@ -318,8 +317,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
             raise InvalidParams(err) from err
 
         try:
-            diagnostic = analyzer.lint(path=uri, engine="pyflakes")
-            results = analyzer.to_rpc(diagnostic)
+            results = analyzer.lint(path=uri, engine="pyflakes")
         except Exception as err:
             raise InternalError(err)
         else:
