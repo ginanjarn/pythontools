@@ -94,11 +94,9 @@ try:
 
             logger.info("build_diff")
             for line in difflib.unified_diff(self.old_sources, self.new_sources):
-                if line.startswith("@@"):
-                    start_line, end_line = get_removed(line)
-                    self.new_block(start_line, end_line)
 
-                elif any(
+                # ignore this marked line
+                if any(
                     [
                         line.startswith("-"),
                         line.startswith("---"),
@@ -107,9 +105,16 @@ try:
                 ):
                     continue  # pass on removed line
 
+                # create new change group
+                if line.startswith("@@"):
+                    start_line, end_line = get_removed(line)
+                    self.new_block(start_line, end_line)
+
+                # insert updated line
                 elif line.startswith("+"):
                     self.add_to_block(line[1:])  # for added line
 
+                # insert unchanges line
                 else:
                     self.add_to_block(line[1:])  # for unmarked line
 
