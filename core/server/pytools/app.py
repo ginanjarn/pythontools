@@ -213,8 +213,8 @@ class ServerHandler(socketserver.BaseRequestHandler):
         try:
             tparams = rpc.TextDocumentPositionParams.from_rpc(params)
             path = tparams.uri
-            line = tparams.location.line + 1  # jedi use 1 based index
-            column = tparams.location.character
+            line = tparams.position.line + 1  # jedi use 1 based index
+            column = tparams.position.character
 
         except (ValueError, KeyError) as err:
             raise InvalidParams(err) from err
@@ -237,8 +237,8 @@ class ServerHandler(socketserver.BaseRequestHandler):
         try:
             tparams = rpc.TextDocumentPositionParams.from_rpc(params)
             path = tparams.uri
-            line = tparams.location.line + 1  # jedi use 1 based index
-            column = tparams.location.character
+            line = tparams.position.line + 1  # jedi use 1 based index
+            column = tparams.position.character
 
         except (ValueError, KeyError) as err:
             raise InvalidParams(err) from err

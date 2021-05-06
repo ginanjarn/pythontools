@@ -56,7 +56,7 @@ try:
                 html_result=render_html(header_template, help_.docstring()),
                 link=rpc.DocumentLink.builder(
                     uri=str(help_.module_path) if help_.module_path else None,
-                    location=rpc.Location.builder(
+                    position=rpc.Position.builder(
                         line=help_.line, character=help_.column
                     ),
                 ),

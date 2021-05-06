@@ -98,7 +98,7 @@ class DocumentURI(str):
         return cls(params["uri"])
 
 
-class Location(dict):
+class Position(dict):
     """cursor position at (line, column)"""
 
     @classmethod
@@ -117,7 +117,7 @@ class Location(dict):
         return self["character"]
 
     @classmethod
-    def from_rpc(cls, params: Params) -> "Location":
+    def from_rpc(cls, params: Params) -> "Position":
         return cls(params)
 
 
@@ -125,10 +125,10 @@ class TextDocumentPositionParams(dict):
     """cursor position at text document"""
 
     @classmethod
-    def builder(cls, uri: DocumentURI, location: Location):
+    def builder(cls, uri: DocumentURI, position: Position):
         holder = {}
         holder["uri"] = uri
-        holder["location"] = location
+        holder["location"] = position
         return cls(holder)
 
     @property
@@ -136,8 +136,8 @@ class TextDocumentPositionParams(dict):
         return self["uri"]
 
     @property
-    def location(self) -> Location:
-        return Location.from_rpc(self["location"])
+    def position(self) -> Position:
+        return Position.from_rpc(self["location"])
 
     @classmethod
     def from_rpc(cls, params: Params) -> "TextDocumentPositionParams":
@@ -232,10 +232,10 @@ CHARACTER = "character"
 NEW_TEXT = "newText"
 
 
-class Range(dict):
+class Location(dict):
     """apply range
 
-    >>> rg = rpc.Range.builder(rpc.Location.builder(0,0),rpc.Location.builder(10,0))
+    >>> rg = rpc.Location.builder(rpc.Position.builder(0,0),rpc.Position.builder(10,0))
     >>> rg
     {'start': {'line': 0, 'character': 0}, 'end': {'line': 10, 'character': 0}}
     >>>
@@ -243,7 +243,7 @@ class Range(dict):
     """
 
     @classmethod
-    def builder(cls, start: Location, end: Location):
+    def builder(cls, start: Position, end: Position):
         return cls({START: start, END: end})
 
     @property
@@ -279,18 +279,18 @@ class TextEdit(dict):
 
     @classmethod
     def builder(cls, start_line, start_character, end_line, end_character, new_text=""):
-        range_ = Range.builder(
-            Location.builder(start_line, start_character),
-            Location.builder(end_line, end_character),
+        range_ = Location.builder(
+            Position.builder(start_line, start_character),
+            Position.builder(end_line, end_character),
         )
         return cls({RANGE: range_, NEW_TEXT: new_text})
 
     @classmethod
     def from_rpc(cls, params):
-        start = Location.from_rpc(params[START])
-        end = Location.from_rpc(params[END])
+        start = Position.from_rpc(params[START])
+        end = Position.from_rpc(params[END])
         new_text = params[NEW_TEXT]
-        range_ = Range.builder(start, end)
+        range_ = Location.builder(start, end)
         return cls({RANGE: range_, NEW_TEXT: new_text})
 
     @property
@@ -302,11 +302,11 @@ class TextEdit(dict):
         self[NEW_TEXT] = value
 
     @property
-    def start(self) -> Location:
+    def start(self) -> Position:
         return self[START]
 
     @property
-    def end(self) -> Location:
+    def end(self) -> Position:
         return self[END]
 
     @property
