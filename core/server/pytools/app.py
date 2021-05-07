@@ -21,10 +21,11 @@ from api import completion, hover, document_formatting, rename, analyzer
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
-sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+template = "%(asctime)s - %(levelname)s::%(module)s: %(lineno)d\t%(message)s"
+sh.setFormatter(logging.Formatter(template))
 sh.setLevel(logging.DEBUG)
 fh = logging.FileHandler("server.log")
-fh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+fh.setFormatter(logging.Formatter(template))
 fh.setLevel(logging.ERROR)
 logger.addHandler(sh)
 logger.addHandler(fh)
