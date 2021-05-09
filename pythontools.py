@@ -486,7 +486,7 @@ class Event(sublime_plugin.ViewEventListener):
         start = 0
         end = location
         word_region = view.word(location)
-        if view.substr(word_region).isidentifier() and len(prefix) > 1:
+        if view.substr(word_region).isidentifier() and word_region.size() > 1:
             end = word_region.a  # complete at first identifier offset
         source_region = sublime.Region(start, end)
         line, character = view.rowcol(end)  # get rowcol at end selection
@@ -554,8 +554,10 @@ class Event(sublime_plugin.ViewEventListener):
             if not server_capable(F_AUTOCOMPLETE):
                 return
 
+            # cursor location
+            location = max(view.sel()[0].a, locations[0])
             thread = threading.Thread(
-                target=self.fetch_completions, args=(prefix, locations[0])
+                target=self.fetch_completions, args=(prefix, location)
             )
             thread.start()
 
