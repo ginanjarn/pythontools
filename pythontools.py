@@ -482,12 +482,26 @@ class Event(sublime_plugin.ViewEventListener):
         """fetch completion process"""
 
         view = self.view
+        word_region = view.word(location)
 
         start = 0
-        end = location
-        word_region = view.word(location)
-        if view.substr(word_region).isidentifier() and word_region.size() > 1:
-            end = word_region.a  # complete at first identifier offset
+        prefix = view.substr(word_region)
+
+        if prefix.isidentifier():
+            # if prefix is identifier
+            if word_region.size() > 1:
+                # more than 2 characted completed
+                end = word_region.a  # complete at first identifier offset
+            else:
+                # single character
+                end = location
+        else:
+            # only next to dot -> access member
+            if prefix.strip().endswith("."):
+                end = location
+            else:
+                return
+
         source_region = sublime.Region(start, end)
         line, character = view.rowcol(end)  # get rowcol at end selection
 
