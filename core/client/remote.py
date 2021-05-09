@@ -336,7 +336,7 @@ def shutdown(*args: "Any") -> "ResponseMessage":
     """
 
     message = RequestMessage.builder(generate_id(), "exit", args)
-    response = request(message.to_rpc(), timeout=0.5)
+    response = request(message.to_rpc(), timeout=15)
     return ResponseMessage.from_rpc(response)
 
 
@@ -351,5 +351,5 @@ def change_workspace(workspace_dir: str) -> "ResponseMessage":
 
     message = RequestMessage.builder(generate_id(), "document.changeWorkspace")
     message.params = {"uri": workspace_dir}
-    response = request(message.to_rpc(), timeout=0.5)
+    response = request(message.to_rpc(), timeout=15)
     return ResponseMessage.from_rpc(response)

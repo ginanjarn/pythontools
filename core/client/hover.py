@@ -29,6 +29,6 @@ def fetch_documentation(src: str, line: int, character: int) -> "ResponseMessage
         "location": {"line": line, "character": character},
     }
     logger.debug(message)
-    response = request(message.to_rpc(), timeout=5)
+    response = request(message.to_rpc(), timeout=15)
     logger.debug(response)
     return ResponseMessage.from_rpc(response)
