@@ -139,19 +139,38 @@ def initialize():
         logger.debug("SERVER_ONLINE : %s, INITIALIZED : %s", SERVER_ONLINE, INITIALIZED)
 
 
+# fmt: off
+
+# RPC FEATURE capability
+COMPLETION_CAPABILITY          = "completion"
+HOVER_CAPABILITY               = "hover"
+DOCUMENT_FORMATTING_CAPABILITY = "document_format"
+DIAGNOSTIC_CAPABILITY          = "diagnostic"
+VALIDATE_CAPABILITY            = "validate"
+RENAME_CAPABILITY              = "rename"
+
+# fmt: on
+
+
 def set_capability(capability):
 
     global SERVER_CAPABILITY
 
     # apply capability
-    SERVER_CAPABILITY[settings.F_AUTOCOMPLETE] = capability.get("completion", False)
-    SERVER_CAPABILITY[settings.F_DOCUMENTATION] = capability.get("hover", False)
-    SERVER_CAPABILITY[settings.F_DOCUMENT_FORMATTING] = capability.get(
-        "document_format", False
+    SERVER_CAPABILITY[settings.F_AUTOCOMPLETE] = capability.get(
+        COMPLETION_CAPABILITY, False
     )
-    SERVER_CAPABILITY[settings.F_DIAGNOSTIC] = capability.get("diagnostic", False)
-    SERVER_CAPABILITY[settings.F_VALIDATE] = capability.get("validate", False)
-    SERVER_CAPABILITY[settings.F_RENAME] = capability.get("rename", False)
+    SERVER_CAPABILITY[settings.F_DOCUMENTATION] = capability.get(
+        HOVER_CAPABILITY, False
+    )
+    SERVER_CAPABILITY[settings.F_DOCUMENT_FORMATTING] = capability.get(
+        HOVER_CAPABILITY, False
+    )
+    SERVER_CAPABILITY[settings.F_DIAGNOSTIC] = capability.get(
+        DIAGNOSTIC_CAPABILITY, False
+    )
+    SERVER_CAPABILITY[settings.F_VALIDATE] = capability.get(VALIDATE_CAPABILITY, False)
+    SERVER_CAPABILITY[settings.F_RENAME] = capability.get(RENAME_CAPABILITY, False)
     logger.debug(SERVER_CAPABILITY)
 
 
