@@ -246,35 +246,22 @@ def run_server(server_path: str, activate_path: str = None) -> "process":
 
     try:
         if os.name == "nt":
-            # linux subprocess module does not have STARTUPINFO
-            # so only use it if on Windows
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
-            server_proc = subprocess.Popen(
-                run_server_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True,
-                cwd=workdir,
-                # env=env,
-                startupinfo=si,
-            )
+            # if on Windows, hide process window
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
         else:
-            server_proc = subprocess.Popen(
-                run_server_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True,
-                cwd=workdir,
-                # env=env,
-            )
+            startupinfo = None
 
+        server_proc = subprocess.Popen(
+            run_server_cmd,
+            shell=True,
+            cwd=workdir,
+            # env=env,
+            startupinfo=startupinfo,
+        )
+
+        err_message = None
         if server_proc.poll():
-            _, serr = server_proc.communicate()
-            err_message = "\n".join(serr.decode().splitlines())
-
             if server_proc.returncode == 123:
                 raise PortInUse(err_message)
 
