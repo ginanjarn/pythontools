@@ -11,6 +11,7 @@ from functools import wraps
 from .core import client
 from .core.sublimetext import document
 from .core.sublimetext import interpreter
+from .core.sublimetext import settings
 
 
 logger = logging.getLogger(__name__)
@@ -62,29 +63,14 @@ def boundary_lock(func):
     return wrapper
 
 
-# fmt: off
-
-SETTINGS_BASENAME       = "Pytools.sublime-settings"
-
-# Settings name
-F_AUTOCOMPLETE          = "autocomplete"
-F_DOCUMENTATION         = "documentation"
-W_ABSOLUTE_IMPORT       = "absolute_import"
-F_DOCUMENT_FORMATTING   = "document_formatting"
-F_DIAGNOSTIC            = "diagnostic"
-F_VALIDATE              = "validate"
-F_RENAME                = "rename"
-
 # All features enabled
-ALL_ENABLED             = False
-
-# fmt: on
+ALL_ENABLED = False
 
 
 def feature_enabled(feature_name: str, *, default=True) -> bool:
     """check if feature enabled on settings"""
 
-    sublime_settings = sublime.load_settings(SETTINGS_BASENAME)
+    sublime_settings = sublime.load_settings(settings.SETTINGS_BASENAME)
     return sublime_settings.get(feature_name, default) and ALL_ENABLED
 
 
@@ -158,12 +144,14 @@ def set_capability(capability):
     global SERVER_CAPABILITY
 
     # apply capability
-    SERVER_CAPABILITY[F_AUTOCOMPLETE] = capability.get("completion", False)
-    SERVER_CAPABILITY[F_DOCUMENTATION] = capability.get("hover", False)
-    SERVER_CAPABILITY[F_DOCUMENT_FORMATTING] = capability.get("document_format", False)
-    SERVER_CAPABILITY[F_DIAGNOSTIC] = capability.get("diagnostic", False)
-    SERVER_CAPABILITY[F_VALIDATE] = capability.get("validate", False)
-    SERVER_CAPABILITY[F_RENAME] = capability.get("rename", False)
+    SERVER_CAPABILITY[settings.F_AUTOCOMPLETE] = capability.get("completion", False)
+    SERVER_CAPABILITY[settings.F_DOCUMENTATION] = capability.get("hover", False)
+    SERVER_CAPABILITY[settings.F_DOCUMENT_FORMATTING] = capability.get(
+        "document_format", False
+    )
+    SERVER_CAPABILITY[settings.F_DIAGNOSTIC] = capability.get("diagnostic", False)
+    SERVER_CAPABILITY[settings.F_VALIDATE] = capability.get("validate", False)
+    SERVER_CAPABILITY[settings.F_RENAME] = capability.get("rename", False)
     logger.debug(SERVER_CAPABILITY)
 
 
@@ -514,7 +502,7 @@ class Event(sublime_plugin.ViewEventListener):
         try:
             initialize()
 
-            if feature_enabled(W_ABSOLUTE_IMPORT):
+            if feature_enabled(settings.W_ABSOLUTE_IMPORT):
                 work_dir = absolute_folder(view)
             else:
                 work_dir = os.path.dirname(view.file_name())
@@ -553,7 +541,7 @@ class Event(sublime_plugin.ViewEventListener):
             [
                 valid_source(view),
                 valid_attribute(view, locations[0]),
-                feature_enabled(F_AUTOCOMPLETE),
+                feature_enabled(settings.F_AUTOCOMPLETE),
             ]
         ):
             if self.completion:
@@ -565,7 +553,7 @@ class Event(sublime_plugin.ViewEventListener):
                 view.window().run_command("pytools_runserver")
                 return
 
-            if not server_capable(F_AUTOCOMPLETE):
+            if not server_capable(settings.F_AUTOCOMPLETE):
                 return
 
             # cursor location
@@ -614,7 +602,7 @@ class Event(sublime_plugin.ViewEventListener):
             try:
                 initialize()
 
-                if feature_enabled(W_ABSOLUTE_IMPORT):
+                if feature_enabled(settings.W_ABSOLUTE_IMPORT):
                     work_dir = absolute_folder(view)
                 else:
                     work_dir = os.path.dirname(view.file_name())
@@ -665,7 +653,7 @@ class Event(sublime_plugin.ViewEventListener):
             [
                 valid_source(view),
                 valid_attribute(view, point),
-                feature_enabled(F_DOCUMENTATION),
+                feature_enabled(settings.F_DOCUMENTATION),
                 hover_zone == sublime.HOVER_TEXT,
             ]
         ):
@@ -674,7 +662,7 @@ class Event(sublime_plugin.ViewEventListener):
                 view.window().run_command("pytools_runserver")
                 return
 
-            if not server_capable(F_DOCUMENTATION):
+            if not server_capable(settings.F_DOCUMENTATION):
                 return
 
             thread = threading.Thread(target=self.fetch_documentation, args=(point,))
@@ -684,7 +672,12 @@ class Event(sublime_plugin.ViewEventListener):
             [
                 valid_source(view),
                 valid_attribute(view, point),
-                any([feature_enabled(F_DIAGNOSTIC), feature_enabled(F_VALIDATE),]),
+                any(
+                    [
+                        feature_enabled(settings.F_DIAGNOSTIC),
+                        feature_enabled(settings.F_VALIDATE),
+                    ]
+                ),
                 hover_zone == sublime.HOVER_GUTTER,
                 DIAGNOSTICS,
             ]
@@ -738,12 +731,12 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
 
         view = self.view
 
-        if all([valid_source(view), feature_enabled(F_DOCUMENT_FORMATTING),]):
+        if all([valid_source(view), feature_enabled(settings.F_DOCUMENT_FORMATTING),]):
             if not SERVER_ONLINE:
                 view.window().run_command("pytools_runserver")
                 return
 
-            if not server_capable(F_DOCUMENT_FORMATTING):
+            if not server_capable(settings.F_DOCUMENT_FORMATTING):
                 return
 
             source = view.substr(sublime.Region(0, view.size()))
@@ -825,11 +818,11 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
         try:
             if quick:
-                check_requirement(F_VALIDATE, path_required=True)
+                check_requirement(settings.F_VALIDATE, path_required=True)
                 method = PytoolsDiagnosticCommand.PYFLAKES
 
             else:
-                check_requirement(F_DIAGNOSTIC, path_required=False)
+                check_requirement(settings.F_DIAGNOSTIC, path_required=False)
                 method = PytoolsDiagnosticCommand.PYLINT
 
         except RequirementInvalid as err:
@@ -900,7 +893,7 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
     def run(self, edit, paths: "List[str]" = None):
         logger.info("on rename")
 
-        if all([feature_enabled(F_RENAME)]):
+        if all([feature_enabled(settings.F_RENAME)]):
 
             view = self.view
             self.path = paths[0] if paths else None
@@ -938,7 +931,7 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
                 self.offset = selection.a
                 old_name = view.substr(selection)
 
-            if not server_capable(F_RENAME):
+            if not server_capable(settings.F_RENAME):
                 return
 
             window = view.window()
@@ -960,7 +953,7 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
     @instance_lock
     def rename_thread(view, path, offset, name):
         try:
-            if feature_enabled(W_ABSOLUTE_IMPORT):
+            if feature_enabled(settings.W_ABSOLUTE_IMPORT):
                 work_dir = absolute_folder(view)
             else:
                 work_dir = os.path.dirname(view.file_name())
