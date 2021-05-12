@@ -811,37 +811,41 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
         logger.info("on diagnostic")
 
         view = self.view
+        if not path:
+            path = view.file_name()
 
-        def check_requirement(feature, path_required=True):
-
-            # change path if not defined
-            nonlocal path
-
-            if not valid_source(view):
-                raise RequirementInvalid("invalid python file")
-
+        def check_requirement(feature):
             if not feature_enabled(feature):
                 raise RequirementInvalid("feature disabled : %s" % feature)
 
             if not server_capable(feature):
                 raise RequirementInvalid("server incapable : %s" % feature)
 
-            if not path:
-                if path_required:
-                    raise RequirementInvalid("path not found")
-                else:
-                    path = view.file_name()
+            if os.path.isdir(path):
+                # path is directory
+                pass
 
-            if not any([os.path.isfile(path), os.path.isdir(path)]):
+            elif os.path.isfile(path):
+                # path is file
+
+                from re import findall
+
+                if not any(findall(r".*\.py[ic]?", path)):
+                    # file is not python file
+                    sublime.error_message("Unable lint non-python file !")
+                    raise RequirementInvalid("not python file")
+
+            else:
+                # invalid path
                 raise RequirementInvalid("invalid path : %s" % path)
 
         try:
             if quick:
-                check_requirement(settings.F_VALIDATE, path_required=True)
+                check_requirement(settings.F_VALIDATE)
                 method = PytoolsDiagnosticCommand.PYFLAKES
 
             else:
-                check_requirement(settings.F_DIAGNOSTIC, path_required=False)
+                check_requirement(settings.F_DIAGNOSTIC)
                 method = PytoolsDiagnosticCommand.PYLINT
 
         except RequirementInvalid as err:
