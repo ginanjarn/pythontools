@@ -534,39 +534,40 @@ class Event(sublime_plugin.ViewEventListener):
         source = view.substr(source_region)
 
         if self.temp_completion_src == source:
+            logger.debug("using cache")
             self.completion = self.cached_completion
-            return None
-
-        try:
-            initialize()
-
-            if feature_enabled(settings.W_ABSOLUTE_IMPORT):
-                work_dir = absolute_folder(view)
-            else:
-                work_dir = os.path.dirname(view.file_name())
-
-            change_workspace(work_dir)
-
-            result = client.fetch_completion(source, line, character)
-
-        except client.ServerOffline:
-            set_offline()
-            logger.debug("ServerOffline")
-            return None
-
         else:
-            if result.error:
-                logger.info(result.error)
+            try:
+                initialize()
+
+                if feature_enabled(settings.W_ABSOLUTE_IMPORT):
+                    work_dir = absolute_folder(view)
+                else:
+                    work_dir = os.path.dirname(view.file_name())
+
+                change_workspace(work_dir)
+
+                result = client.fetch_completion(source, line, character)
+
+            except client.ServerOffline:
+                set_offline()
+                logger.debug("ServerOffline")
                 return None
 
-            self.completion = (
-                list(self.build_completion(result.results)),
-                sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
-            )
+            else:
+                if result.error:
+                    logger.info(result.error)
+                    return None
 
-            # set cache
-            self.temp_completion_src = source
-            self.cached_completion = self.completion
+                self.completion = (
+                    list(self.build_completion(result.results)),
+                    sublime.INHIBIT_WORD_COMPLETIONS
+                    | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
+                )
+
+                # set cache
+                self.temp_completion_src = source
+                self.cached_completion = self.completion
 
         self.old_end_position = params.end
         document.show_completions(view)
@@ -591,6 +592,7 @@ class Event(sublime_plugin.ViewEventListener):
 
             if self.completion:
                 if self.old_end_position != params.end:
+                    logger.debug("invalid context")
                     return None
 
                 completion = self.completion
