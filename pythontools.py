@@ -457,6 +457,45 @@ def absolute_folder(view):
 DIAGNOSTICS = []
 
 
+class CompletionParams:
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+
+    @classmethod
+    def from_view(cls, view: sublime.View, location: int):
+        """Build from view
+
+        Params:
+            view(sublime.View): current view
+            location(int): cursor position
+
+        Raises:
+            ValueError
+        """
+        word_region = view.word(location)
+
+        start = 0
+        prefix = view.substr(word_region)
+
+        if prefix.isidentifier():
+            # if prefix is identifier
+            if word_region.size() > 1:
+                # more than 2 characted completed
+                end = word_region.a + 1  # complete at first identifier offset
+            else:
+                # single character
+                end = location
+        else:
+            # only next to dot -> access member
+            if prefix.strip().endswith("."):
+                end = location
+            else:
+                raise ValueError("invalid prefix to complete")
+
+        return cls(start=start, end=end)
+
+
 class Event(sublime_plugin.ViewEventListener):
     """Event handler"""
 
@@ -466,6 +505,7 @@ class Event(sublime_plugin.ViewEventListener):
 
         self.completion = None
 
+        self.old_end_position = None
         self.cached_completion = None
         self.temp_completion_src = ""
         self.cached_docstring = None
@@ -485,33 +525,12 @@ class Event(sublime_plugin.ViewEventListener):
             )
 
     @instance_lock
-    def fetch_completions(self, prefix, location):
+    def fetch_completions(self, prefix, params: CompletionParams):
         """fetch completion process"""
 
         view = self.view
-        word_region = view.word(location)
-
-        start = 0
-        prefix = view.substr(word_region)
-
-        if prefix.isidentifier():
-            # if prefix is identifier
-            if word_region.size() > 1:
-                # more than 2 characted completed
-                end = word_region.a  # complete at first identifier offset
-            else:
-                # single character
-                end = location
-        else:
-            # only next to dot -> access member
-            if prefix.strip().endswith("."):
-                end = location
-            else:
-                return
-
-        source_region = sublime.Region(start, end)
-        line, character = view.rowcol(end)  # get rowcol at end selection
-
+        line, character = view.rowcol(params.end)  # get rowcol at end selection
+        source_region = sublime.Region(params.start, params.end)
         source = view.substr(source_region)
 
         if self.temp_completion_src == source:
@@ -549,6 +568,7 @@ class Event(sublime_plugin.ViewEventListener):
             self.temp_completion_src = source
             self.cached_completion = self.completion
 
+        self.old_end_position = params.end
         document.show_completions(view)
 
     def on_query_completions(self, prefix, locations):
@@ -563,22 +583,29 @@ class Event(sublime_plugin.ViewEventListener):
                 feature_enabled(settings.F_AUTOCOMPLETE),
             ]
         ):
+            location = max(view.sel()[0].a, locations[0])
+            try:
+                params = CompletionParams.from_view(view, location)
+            except ValueError:
+                return None
+
             if self.completion:
+                if self.old_end_position != params.end:
+                    return None
+
                 completion = self.completion
                 self.completion = None
                 return completion
 
             if not SERVER_ONLINE:
                 view.window().run_command("pytools_runserver")
-                return
+                return None
 
             if not server_capable(settings.F_AUTOCOMPLETE):
-                return
+                return None
 
-            # cursor location
-            location = max(view.sel()[0].a, locations[0])
             thread = threading.Thread(
-                target=self.fetch_completions, args=(prefix, location)
+                target=self.fetch_completions, args=(prefix, params)
             )
             thread.start()
 
