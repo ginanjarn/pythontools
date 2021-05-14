@@ -28,7 +28,7 @@ try:
         return doc.replace("  ", "&nbsp;&nbsp;")
 
     def escape_newline(doc: str) -> str:
-        """replace '\\n' -> '<br>'"""
+        r"""replace '\n' -> '<br>'"""
         return doc.replace("\n", "<br>")
 
     def document_body(docs: Optional[str]) -> str:
@@ -46,15 +46,14 @@ try:
     def build_rpc(help_: BaseName) -> Optional[Dict[str, Any]]:
         """build rpc content"""
 
-        header_template = '<code><a href="">{module}.{name}</a> (<em>{type_}</em>)</code>'.format(
-            module=help_.module_name, name=help_.name, type_=help_.type
-        )
+        module_name = "" if help_.module_name == "__main__" else f"{help_.module_name}."
+        header = f"<a href='#' style='text-decoration:none'>{module_name}{help_.name} <i>({help_.type})</i></a>"
 
         return (
             None
             if help_.is_keyword
             else rpc.Documentation.builder(
-                html_result=render_html(header_template, help_.docstring()),
+                html_result=render_html(header, help_.docstring()),
                 link=rpc.DocumentLink.builder(
                     uri=str(help_.module_path) if help_.module_path else None,
                     position=rpc.Position.builder(
