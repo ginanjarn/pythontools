@@ -591,12 +591,14 @@ class Event(sublime_plugin.ViewEventListener):
                 return None
 
             if self.completion:
+                completion = self.completion
+                self.completion = None
+
+                # invalid context
                 if self.old_end_position != params.end:
                     logger.debug("invalid context")
                     return None
 
-                completion = self.completion
-                self.completion = None
                 return completion
 
             if not SERVER_ONLINE:
