@@ -796,13 +796,12 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
             file_name = view.file_name()
 
             thread = threading.Thread(
-                target=self.formatting_task, args=(file_name, source)
+                target=self.formatting_task, args=(view, file_name, source)
             )
             thread.start()
 
-    @staticmethod
     @instance_lock
-    def formatting_task(path, source):
+    def formatting_task(self, view: sublime.View, path: str, source: str):
         logger.debug("on formatting thread")
 
         try:
@@ -822,7 +821,10 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
                 return
 
             window = sublime.active_window()
-            view = window.open_file(path)
+
+            if window.active_view().id() != view.id():
+                view = window.open_file(path)
+
             view.run_command(
                 "pytools_apply_rpc_change", args={"changes": result.results}
             )
