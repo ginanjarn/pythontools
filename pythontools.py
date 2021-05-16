@@ -442,6 +442,9 @@ def plugin_loaded():
 def absolute_folder(view):
 
     file_name = view.file_name()
+    if not file_name:
+        return None
+
     matches = [
         folder for folder in view.window().folders() if file_name.startswith(folder)
     ]
