@@ -267,3 +267,30 @@ def diagnostic_message(
             temp_message[row] = message
 
     return temp_message
+
+
+class OutputPanel:
+    """Output panel handler"""
+
+    def __init__(self, window: sublime.Window, name: str):
+        self.panel_name = name
+        self.window = window
+        self.panel = window.create_output_panel(self.panel_name)
+        self.panel.set_read_only(False)
+
+    def append(self, *args):
+        """append message to panel"""
+
+        for message in args:
+            self.panel.run_command(
+                "append", {"characters": message + "\n"},
+            )
+
+    def show(self):
+        """show panel"""
+
+        self.window.run_command("show_panel", {"panel": "output.%s" % self.panel_name})
+
+    def destroy(self):
+        """destroy panel"""
+        self.window.destroy_output_panel(self.panel_name)

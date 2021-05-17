@@ -42,6 +42,11 @@
                 "id": "features"
               },
               {
+                "caption": "Show diagnostics panel",
+                "command": "pytools_set_diagnosticpanel",
+                "id": "features"
+              },
+              {
                 "caption": "-",
                 "id": "workspace"
               },

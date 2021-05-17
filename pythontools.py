@@ -760,6 +760,7 @@ class Event(sublime_plugin.ViewEventListener):
 
     def on_activated(self):
         self.clear_cached_diagnostic()
+        self.view.run_command("pytools_show_diagnostic_panel")
 
     def on_pre_close(self):
         self.view.run_command("pytools_clear_diagnostic")
@@ -919,6 +920,40 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
             logger.debug(diagnostics)
             DIAGNOSTICS.extend(diagnostics)
             document.apply_diagnostics(self.view, DIAGNOSTICS)
+
+            self.view.run_command("pytools_show_diagnostic_panel")
+
+
+class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
+    """diagnostic panel"""
+
+    def run(self, edit):
+        if feature_enabled(settings.W_DIAGNOSTIC_PANEL):
+            self.show_diagnostic_panel()
+
+    def show_diagnostic_panel(self):
+        filtered_diagnostics = [
+            diagnostic
+            for diagnostic in DIAGNOSTICS
+            if diagnostic.view_id == self.view.id()
+        ]
+
+        def build_message(diagnostics):
+            for diagnostics in filtered_diagnostics:
+                message = diagnostics.message
+                row, col = self.view.rowcol(diagnostics.region.a)
+                file_name = os.path.basename(self.view.file_name())
+                yield "{file_name}:{row}:{col}: {message}".format(
+                    file_name=file_name, row=row + 1, col=col, message=message
+                )
+
+        output_panel = document.OutputPanel(self.view.window(), "diagnostic")
+
+        if not filtered_diagnostics:
+            output_panel.destroy()
+
+        output_panel.append(*build_message(filtered_diagnostics))
+        output_panel.show()
 
 
 class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
