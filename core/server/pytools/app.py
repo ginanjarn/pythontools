@@ -247,7 +247,8 @@ class ServerHandler(socketserver.BaseRequestHandler):
         except (ValueError, KeyError) as err:
             raise errors.InvalidParams(err) from None
 
-        return analyzer.lint(path=uri)
+        lint = analyzer.PyLint(uri)
+        return lint.to_rpc()
 
     def validate_source(self, params: rpc.Params) -> Any:
         try:
@@ -255,7 +256,8 @@ class ServerHandler(socketserver.BaseRequestHandler):
         except (ValueError, KeyError) as err:
             raise errors.InvalidParams(err) from None
 
-        return analyzer.lint(path=uri, engine="pyflakes")
+        lint = analyzer.PyFlakes(uri)
+        return lint.to_rpc()
 
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 

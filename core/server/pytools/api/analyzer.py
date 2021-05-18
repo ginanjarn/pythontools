@@ -172,13 +172,3 @@ class PyFlakes:
 
     def to_rpc(self) -> Dict[str, Any]:
         return list(pyflakes_to_rpc(self.message))
-
-
-def lint(path: str, *, engine="pylint"):
-    """lint module"""
-
-    # lint engine map
-    lint_func = {"pylint": PyLint, "pyflakes": PyFlakes}
-    diagnostic = lint_func[engine](path)
-
-    return diagnostic.to_rpc()
