@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from html import escape
 import logging
 
-from api import rpc
+from api import rpc, errors
 
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,10 @@ try:
             self, source: str, *, line: int, column: int, project: Project = None
         ):
             script = Script(source, project=project)
-            self.candidates = script.help(line, column)
+            try:
+                self.candidates = script.help(line, column)
+            except ValueError as err:
+                raise errors.InvalidInput(str(err)) from err
 
         def to_rpc(self):
             return to_rpc(self.candidates)

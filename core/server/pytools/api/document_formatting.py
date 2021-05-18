@@ -6,7 +6,7 @@ import difflib
 import logging
 import re
 
-from api import rpc
+from api import rpc, errors
 
 
 logger = logging.getLogger(__name__)
@@ -147,7 +147,10 @@ try:
     class DocumentFormatting:
         def __init__(self, source: str):
             self.source = source
-            self.candidates = format_with_black(source)
+            try:
+                self.candidates = format_with_black(source)
+            except black.InvalidInput as err:
+                raise errors.InvalidInput(str(err)) from None
 
         def to_rpc(self):
             return to_rpc(self.candidates, source=self.source)

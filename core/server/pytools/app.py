@@ -14,7 +14,7 @@ import re
 from importlib.util import find_spec
 from typing import Any, Tuple
 
-from api import rpc
+from api import rpc, errors
 from api import completion, hover, document_formatting, rename, analyzer
 
 
@@ -78,37 +78,6 @@ class TransactionMessage:
             content=body.decode(parsed_header.get("encoding", "utf-8")),
             headers=parsed_header,
         )
-
-
-# Error classes ++++++++++++++++++++++++++++++++++++++++
-class InvalidRPCMessage(ValueError):
-    """Invalid RPC Message"""
-
-    def __init__(self, err):
-        super().__init__("Invalid RPC Message : %s" % repr(err))
-
-
-class MethodNotFound(KeyError):
-    """Method not found error"""
-
-    def __init__(self, err):
-        super().__init__("method not found : %s" % str(err))
-
-
-class InvalidParams(Exception):
-    """required params not found"""
-
-    def __init__(self, err):
-        if isinstance(err, KeyError):
-            # key not found
-            super().__init__("params not found : %s" % str(err))
-        else:
-            # parsing error
-            super().__init__(str(err))
-
-
-class InternalError(Exception):
-    """internal error occured"""
 
 
 # fmt: off
@@ -205,7 +174,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
             results = {"workspace_directory": WORKSPACE_DIRECTORY}
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
         else:
             return results
 
@@ -218,21 +187,14 @@ class ServerHandler(socketserver.BaseRequestHandler):
             column = tparams.position.character
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            project = (
-                completion.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
-            )
-            cmpl = completion.Completion(
-                path, line=line, column=column, project=project
-            )
-            results = cmpl.to_rpc()
+        project = (
+            completion.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
+        )
 
-        except Exception as err:
-            raise InternalError(err) from err
-        else:
-            return results
+        cmpl = completion.Completion(path, line=line, column=column, project=project)
+        return cmpl.to_rpc()
 
     def hover(self, params: rpc.Params) -> Any:
         try:
@@ -242,20 +204,12 @@ class ServerHandler(socketserver.BaseRequestHandler):
             column = tparams.position.character
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            project = (
-                hover.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
-            )
+        project = hover.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
 
-            doc = hover.Documentation(path, line=line, column=column, project=project)
-            results = doc.to_rpc()
-
-        except Exception as err:
-            raise InternalError(err) from err
-        else:
-            return results
+        doc = hover.Documentation(path, line=line, column=column, project=project)
+        return doc.to_rpc()
 
     def formatting(self, params: rpc.Params) -> Any:
         try:
@@ -263,16 +217,10 @@ class ServerHandler(socketserver.BaseRequestHandler):
             src = uri
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            formatted = document_formatting.DocumentFormatting(src)
-            results = formatted.to_rpc()
-
-        except Exception as err:
-            raise InternalError(err) from err
-        else:
-            return results
+        formatted = document_formatting.DocumentFormatting(src)
+        return formatted.to_rpc()
 
     def rename(self, params: rpc.Params) -> Any:
         try:
@@ -287,42 +235,27 @@ class ServerHandler(socketserver.BaseRequestHandler):
             new_name = params["new_name"]
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            changes = rename.rename_attribute(project, resource, offset, new_name)
-            results = rename.to_rpc(changes)
-
-        except Exception as err:
-            raise InternalError(err) from err
-        else:
-            return results
+        changes = rename.rename_attribute(project, resource, offset, new_name)
+        results = rename.to_rpc(changes)
+        return results
 
     def get_diagnostic(self, params: rpc.Params) -> Any:
         try:
             uri = rpc.DocumentURI.from_rpc(params)
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            results = analyzer.lint(path=uri)
-        except Exception as err:
-            raise InternalError(err)
-        else:
-            return results
+        return analyzer.lint(path=uri)
 
     def validate_source(self, params: rpc.Params) -> Any:
         try:
             uri = rpc.DocumentURI.from_rpc(params)
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            results = analyzer.lint(path=uri, engine="pyflakes")
-        except Exception as err:
-            raise InternalError(err)
-        else:
-            return results
+        return analyzer.lint(path=uri, engine="pyflakes")
 
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -330,7 +263,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         try:
             command = self.commands[method]
         except KeyError as err:
-            raise MethodNotFound(err) from err
+            raise errors.MethodNotFound(err) from err
         else:
             return command(params)
 
@@ -347,7 +280,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
                 )
 
             except json.JSONDecodeError as err:
-                raise InvalidRPCMessage(err) from err
+                raise errors.InvalidRPCMessage(err) from err
 
             resp_message.id_ = req_message.id_
 
@@ -363,9 +296,32 @@ class ServerHandler(socketserver.BaseRequestHandler):
             resp_message.id_ = req_message.id_
             resp_message.results = results
 
+        except errors.MethodNotFound as err:
+            logger.debug("invalid method error : %s", err)
+            resp_message.error = rpc.ResponseError.builder(
+                rpc.ErrorCode.METHOD_NOT_FOUND_ERROR, message=str(err)
+            )
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+
+        except errors.InvalidParams as err:
+            logger.debug("invalid params error : %s", err)
+            resp_message.error = rpc.ResponseError.builder(
+                rpc.ErrorCode.INVALID_PARAMS_ERROR, message=str(err)
+            )
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+
+        except errors.InvalidInput as err:
+            logger.debug("invalid input error : %s", err)
+            resp_message.error = rpc.ResponseError.builder(
+                rpc.ErrorCode.INPUT_ERROR, message=str(err)
+            )
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+
         except Exception as err:
             logger.exception("process exception : %s", err)
-            resp_message.error = repr(err)
+            resp_message.error = rpc.ResponseError.builder(
+                rpc.ErrorCode.INTERNAL_ERROR, message=repr(err)
+            )
             return TransactionMessage(resp_message.to_rpc()).to_bytes()
 
         else:

@@ -1,7 +1,8 @@
 """rpc message interface"""
 
 
-from typing import Dict, Any
+from enum import Enum
+from typing import Dict, Any, Optional
 from io import StringIO
 import json
 
@@ -13,6 +14,20 @@ METHOD      = "method"
 PARAMS      = "params"
 RESULTS     = "results"
 ERROR       = "error"
+
+# ERROR
+CODE        = "code"
+MESSAGE     = "message"
+DATA        = "data"
+
+# ERROR CODE
+class ErrorCode(Enum):
+    INTERNAL_ERROR          = 90000
+    TRANSACTION_ERROR       = 90001
+    PARSE_MESSAGE_ERROR     = 90002
+    INPUT_ERROR             = 90003
+    METHOD_NOT_FOUND_ERROR  = 90004
+    INVALID_PARAMS_ERROR    = 90005
 
 # fmt: on
 
@@ -78,6 +93,31 @@ class ResponseMessage(dict):
     @classmethod
     def builder(cls, id_, results=None, error=None):
         return cls({ID: id_, RESULTS: results, ERROR: error})
+
+    @classmethod
+    def from_rpc(cls, message: str) -> "ResponseMessage":
+        return cls(json.loads(message))
+
+    def to_rpc(self) -> str:
+        return json.dumps(self)
+
+
+class ResponseError(dict):
+    @property
+    def code(self):
+        return self[CODE]
+
+    @property
+    def message(self):
+        return self[MESSAGE]
+
+    @property
+    def data(self):
+        return self[DATA]
+
+    @classmethod
+    def builder(cls, code: ErrorCode, message: str, data: Optional[Any]=None):
+        return cls({CODE: code.value, MESSAGE: message, DATA: data})
 
     @classmethod
     def from_rpc(cls, message: str) -> "ResponseMessage":
