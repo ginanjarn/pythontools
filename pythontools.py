@@ -980,6 +980,10 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
 
         DIAGNOSTICS = list(filter(keeped_criteria, DIAGNOSTICS))
 
+        # destroy output panel
+        output_panel = document.OutputPanel(self.view.window(), "diagnostic")
+        output_panel.destroy()
+
 
 class PytoolsRenameCommand(sublime_plugin.TextCommand):
     """Diagnostic command"""
