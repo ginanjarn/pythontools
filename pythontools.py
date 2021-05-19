@@ -460,6 +460,9 @@ def absolute_folder(view):
 # Diagnostic data holder
 DIAGNOSTICS = []
 
+# output panel name
+OUTPUT_PANEL_NAME = "pytools"
+
 
 class CompletionParams:
     def __init__(self, start, end):
@@ -818,7 +821,7 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
             logger.error("format document", exc_info=True)
 
         else:
-            output_panel = document.OutputPanel(view.window(), "error")
+            output_panel = document.OutputPanel(view.window(), OUTPUT_PANEL_NAME)
 
             if result.error:  # any error
                 logger.debug(result.error)
@@ -955,7 +958,7 @@ class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
                     file_name=file_name, row=row + 1, col=col, message=message
                 )
 
-        output_panel = document.OutputPanel(self.view.window(), "diagnostic")
+        output_panel = document.OutputPanel(self.view.window(), OUTPUT_PANEL_NAME)
 
         if filtered_diagnostics:
             output_panel.append(*build_message(filtered_diagnostics))
