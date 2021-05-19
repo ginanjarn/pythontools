@@ -956,11 +956,12 @@ class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
 
         output_panel = document.OutputPanel(self.view.window(), "diagnostic")
 
-        if not filtered_diagnostics:
-            output_panel.destroy()
+        if filtered_diagnostics:
+            output_panel.append(*build_message(filtered_diagnostics))
+            output_panel.show()
 
-        output_panel.append(*build_message(filtered_diagnostics))
-        output_panel.show()
+        else:
+            output_panel.hide()
 
 
 class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
