@@ -817,9 +817,16 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
             logger.error("format document", exc_info=True)
 
         else:
+            output_panel = document.OutputPanel(view.window(), "error")
+
             if result.error:  # any error
                 logger.debug(result.error)
+                output_panel.append(result.error["message"])
+                output_panel.show()
                 return
+
+            output_panel.clear()
+            output_panel.hide()
 
             window = sublime.active_window()
 

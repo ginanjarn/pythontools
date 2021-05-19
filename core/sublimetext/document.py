@@ -296,8 +296,11 @@ class OutputPanel:
 
     def show(self):
         """show panel"""
-
         self.window.run_command("show_panel", {"panel": "output.%s" % self.panel_name})
+
+    def hide(self):
+        """hide panel"""
+        self.window.run_command("hide_panel", {"panel": "output.%s" % self.panel_name})
 
     def destroy(self):
         """destroy panel"""
