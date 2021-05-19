@@ -275,8 +275,12 @@ class OutputPanel:
     def __init__(self, window: sublime.Window, name: str):
         self.panel_name = name
         self.window = window
-        self.panel = window.create_output_panel(self.panel_name)
-        self.panel.set_read_only(False)
+        self.panel = window.get_output_panel(self.panel_name)
+        if not self.panel:
+            self.panel = window.create_output_panel(self.panel_name)
+            self.panel.set_read_only(False)
+        else:
+            self.clear()
 
     def append(self, *args):
         """append message to panel"""
@@ -285,6 +289,10 @@ class OutputPanel:
             self.panel.run_command(
                 "append", {"characters": message + "\n"},
             )
+
+    def clear(self):
+        """clear panel message"""
+        self.panel.run_command("clear")
 
     def show(self):
         """show panel"""
