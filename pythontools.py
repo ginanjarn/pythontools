@@ -8,6 +8,7 @@ import logging
 import os
 import time
 from functools import wraps
+from itertools import dropwhile
 from .core import client
 from .core.sublimetext import document
 from .core.sublimetext import interpreter
@@ -982,11 +983,10 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
 
         global DIAGNOSTICS
 
-        # clear diagnostic on current view only
-        def keeped_criteria(mark: document.Mark):
-            return mark.view_id != view.id()
+        def removed(mark: document.Mark):
+            return mark.view_id == view.id()
 
-        DIAGNOSTICS = list(filter(keeped_criteria, DIAGNOSTICS))
+        DIAGNOSTICS = list(dropwhile(removed, DIAGNOSTICS))
 
         # destroy output panel
         output_panel = document.OutputPanel(self.view.window(), "diagnostic")
