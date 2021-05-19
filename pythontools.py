@@ -918,9 +918,16 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
         except client.ServerOffline:
             logger.debug("ServerOffline")
         else:
-            if result.error:
+            output_panel = document.OutputPanel(self.view.window(), OUTPUT_PANEL_NAME)
+
+            if result.error:  # any error
                 logger.debug(result.error)
+                output_panel.append(result.error["message"])
+                output_panel.show()
                 return
+
+            output_panel.clear()
+            output_panel.hide()
 
             global DIAGNOSTICS
 

@@ -8,6 +8,8 @@ import subprocess
 import logging
 from typing import List, Dict, Any
 
+from api import errors
+
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
@@ -92,7 +94,7 @@ def pyflakes(path: str):
 
     sout, serr = server_proc.communicate()
     if serr:
-        raise Exception("\n".join(serr.decode().splitlines()))
+        raise errors.InvalidInput("\n".join(serr.decode().splitlines()))
 
     return sout.decode()
 
