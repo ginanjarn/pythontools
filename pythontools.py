@@ -996,7 +996,7 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
         DIAGNOSTICS = list(dropwhile(removed, DIAGNOSTICS))
 
         # destroy output panel
-        output_panel = document.OutputPanel(self.view.window(), "diagnostic")
+        output_panel = document.OutputPanel(self.view.window(), OUTPUT_PANEL_NAME)
         output_panel.destroy()
 
 
