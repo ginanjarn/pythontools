@@ -358,9 +358,6 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             logger.error("run server", exc_info=True)
 
         else:
-            # wait for socket ready
-            time.sleep(1)
-
             # continue initialize if server already running
             self.initialize_server()
 

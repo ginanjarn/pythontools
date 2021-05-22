@@ -6,6 +6,7 @@ import re
 import os
 import socket
 import subprocess
+import time
 import json
 import random
 import logging
@@ -260,8 +261,10 @@ def run_server(server_path: str, activate_path: str = None) -> "process":
             startupinfo=startupinfo,
         )
 
+        time.sleep(3)   # wait server ready
         err_message = None
-        if server_proc.poll():
+        poll = server_proc.poll()
+        if poll:
             if server_proc.returncode == 123:
                 raise PortInUse(err_message)
 
