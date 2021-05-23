@@ -852,12 +852,17 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
     PYFLAKES = "validate"
     PYLINT = "diagnose"
 
+    @boundary_lock
     def run(self, edit, path=None, quick=False):
         logger.info("on diagnostic")
 
+        # clear current diagnostic
+        self.view.run_command("pytools_clear_diagnostic")
+
         view = self.view
         if not path:
-            path = view.file_name()
+            file_name = view.file_name()
+            path = file_name if file_name else ""
 
         def check_requirement(feature):
             if not feature_enabled(feature):
@@ -934,7 +939,7 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
             logger.debug(diagnostics)
             DIAGNOSTICS.extend(diagnostics)
-            document.apply_diagnostics(self.view, DIAGNOSTICS)
+            document.mark_document(self.view, DIAGNOSTICS)
 
             self.view.run_command("pytools_show_diagnostic_panel")
 
@@ -979,6 +984,8 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
         logger.info("on clear diagnostic")
 
         view = self.view
+        if not valid_source(view):
+            return
 
         for severity in [
             document.ERROR,
