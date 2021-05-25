@@ -237,9 +237,8 @@ class ServerHandler(socketserver.BaseRequestHandler):
         except (ValueError, KeyError) as err:
             raise errors.InvalidParams(err) from None
 
-        changes = rename.rename_attribute(project, resource, offset, new_name)
-        results = rename.to_rpc(changes)
-        return results
+        changes = rename.Rename(project, resource, offset, new_name)
+        return changes.to_rpc()
 
     def get_diagnostic(self, params: rpc.Params) -> Any:
         try:

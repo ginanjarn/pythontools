@@ -1010,69 +1010,76 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
 class PytoolsRenameCommand(sublime_plugin.TextCommand):
     """Diagnostic command"""
 
-    def run(self, edit, paths: "List[str]" = None):
+    def run(self, edit):
         logger.info("on rename")
 
-        if all([feature_enabled(settings.F_RENAME)]):
+        try:
+            INSTANCE_LOCK.acquire()
+            self.rename()
 
-            view = self.view
-            self.path = paths[0] if paths else None
-            rename_module = True if self.path else False
+        except RequirementInvalid as err:
+            logger.debug("rename error: %s", err)
 
-            if rename_module:
-                # rename module
+        finally:
+            INSTANCE_LOCK.release()
 
-                self.offset = None
-                name, ext = os.path.splitext(os.path.basename(self.path))
-                old_name = name
+    def rename(self):
+        """Perform rename
 
-                if ext not in [".py", ".pyi", ".pyc"]:
-                    logger.debug("not python file")
-                    return
+        Raises:
+            RequirementInvalid
+        """
 
-            else:
-                # rename attribute
+        view = self.view
 
-                view.run_command("save")  # write buffer
-                selection = view.sel()[0]
+        if not feature_enabled(settings.F_RENAME):
+            raise RequirementInvalid("feature disabled %s" % repr(settings.F_RENAME))
 
-                if not all([valid_source(view), valid_attribute(view, selection.a)]):
-                    logger.debug("invalid view and attribute")
-                    return
+        if not server_capable(settings.F_RENAME):
+            raise RequirementInvalid("server incapable %s" % repr(settings.F_RENAME))
 
-                self.path = view.file_name()
+        if view.is_dirty():
+            sublime.error_message("Error!\n\nUnable rename unsaved document.")
+            raise RequirementInvalid("unable rename unsaved view")
 
-                if selection.size() != view.word(selection.a).size():
-                    logger.debug(
-                        "no selected attribute, found : %s", view.substr(selection)
-                    )
-                    return
+        selection = view.sel()[0]
 
-                self.offset = selection.a
-                old_name = view.substr(selection)
+        if not valid_attribute(view, selection.a):
+            raise RequirementInvalid("invalid attribute")
 
-            if not server_capable(settings.F_RENAME):
-                return
+        self.target_identifier = view.substr(selection)
 
-            window = view.window()
-            document.show_input_panel(
-                window,
-                "New name",
-                on_done=self.on_input_name_done,
-                initial_text=old_name,
+        if selection.size() != view.word(selection.a).size():
+            raise RequirementInvalid(
+                "invalid attribute %s" % repr(self.target_identifier)
             )
 
-    def on_input_name_done(self, name):
-        view = sublime.active_window().active_view()
+        self.path = view.file_name()
+        self.offset = selection.a
+
+        document.show_input_panel(
+            view.window(),
+            "rename: %s to " % repr(self.target_identifier),
+            initial_text=self.target_identifier,
+            on_done=self.on_input_name_done,
+        )
+
+    def on_input_name_done(self, new_name):
         thread = threading.Thread(
-            target=self.rename_thread, args=(view, self.path, self.offset, name)
+            target=self.rename_thread, args=(self.path, self.offset, new_name)
         )
         thread.start()
 
-    @staticmethod
     @instance_lock
-    def rename_thread(view, path, offset, name):
+    def rename_thread(self, path: str, offset: int, new_name: str):
+        view = sublime.active_window().active_view()
         try:
+            if new_name == self.target_identifier:
+                raise RequirementInvalid("nothing changed")
+
+            if not str.isidentifier(new_name):
+                raise RequirementInvalid("invalid new name %s" % repr(new_name))
+
             if feature_enabled(settings.W_ABSOLUTE_IMPORT):
                 work_dir = absolute_folder(view)
             else:
@@ -1080,10 +1087,13 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
 
             change_workspace(work_dir)
 
-            result = client.rename(file_path=path, offset=offset, new_name=name)
+            result = client.rename(file_path=path, offset=offset, new_name=new_name)
 
         except client.ServerOffline:
             logger.debug("ServerOffline")
+
+        except RequirementInvalid as err:
+            logger.debug(err)
 
         except Exception:
             logger.error("rename error", exc_info=True)
@@ -1104,6 +1114,19 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
             try:
                 if change["type"] == "change":
                     view = window.open_file(change["file_name"])
+
+                    # make sure if document loaded
+                    retry = 0.0
+                    while True:
+                        if view.is_loading():
+                            time.sleep(0.5)
+                            retry += 0.5
+                            continue
+
+                        if retry >= 30.0:  # max wait 30 second
+                            raise Exception("unable load file")
+                        break
+
                     view.run_command(
                         "pytools_apply_rpc_change", args={"changes": change["changes"]}
                     )
@@ -1111,7 +1134,12 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
                 elif change["type"] == "rename":
                     old_name = change["changes"]["old_name"]
                     new_name = change["changes"]["new_name"]
-                    os.rename(old_name, new_name)
+                    path_type = "directory" if os.path.isdir(old_name) else ""
+                    if sublime.ok_cancel_dialog(
+                        "Would you line rename %s:\n\n  %s\n  to:\n  %s"
+                        % (path_type, old_name, new_name)
+                    ):
+                        os.rename(old_name, new_name)
 
             except (KeyError, FileNotFoundError):
                 logger.error("error apply_renames", exc_info=True)
