@@ -249,7 +249,7 @@ def erase_regions(view: sublime.View, key: str):
     view.erase_regions(key)
 
 
-def apply_diagnostics(
+def mark_document(
     view: sublime.View, marks: "Iterable[Mark]",
 ):
     # marks in current view
