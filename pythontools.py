@@ -119,8 +119,8 @@ def initialize():
     try:
         result = client.initialize()
 
-    except client.ServerOffline:
-        logger.debug("ServerOffline")
+    except client.ServerOffline as err:
+        logger.debug(err)
         set_offline()
 
     else:
@@ -294,6 +294,10 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     def run(self):
         logger.info("on run server")
 
+        view = self.window.active_view()
+        if not valid_source(view):
+            return  # cancel if not python file
+
         if SERVER_ERROR:
             logger.debug("server error")
             return  # cancel if server error
@@ -345,8 +349,9 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
             sublime.status_message("SERVER RUNNING")
 
-        except client.ServerError:
-            logger.debug("server error")
+        except client.ServerError as err:
+            logger.debug(err)
+
             global SERVER_ERROR
             SERVER_ERROR = True
 
@@ -407,9 +412,9 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
 
         try:
             response = client.shutdown()
-        except client.ServerOffline:
+        except client.ServerOffline as err:
             set_offline()
-            logger.debug("ServerOffline")
+            logger.debug(err)
 
         except Exception:
             logger.error("shutdown server", exc_info=True)
@@ -500,6 +505,10 @@ class CompletionParams:
         return cls(start=start, end=end)
 
 
+class RequirementInvalid(Exception):
+    """invalid required input"""
+
+
 class Event(sublime_plugin.ViewEventListener):
     """Event handler"""
 
@@ -553,15 +562,15 @@ class Event(sublime_plugin.ViewEventListener):
 
                 result = client.fetch_completion(source, line, character)
 
-            except client.ServerOffline:
+            except client.ServerOffline as err:
                 set_offline()
-                logger.debug("ServerOffline")
-                return None
+                logger.debug(err)
+                return
 
             else:
                 if result.error:
                     logger.info(result.error)
-                    return None
+                    return
 
                 self.completion = (
                     list(self.build_completion(result.results)),
@@ -581,19 +590,44 @@ class Event(sublime_plugin.ViewEventListener):
 
         logger.info("on query completions")
         view = self.view
-        if all(
-            [
-                valid_source(view),
-                valid_attribute(view, locations[0]),
-                feature_enabled(settings.F_AUTOCOMPLETE),
-            ]
-        ):
-            location = max(view.sel()[0].a, locations[0])
-            try:
-                params = CompletionParams.from_view(view, location)
-            except ValueError:
-                return None
 
+        if not SERVER_ONLINE:
+            view.window().run_command("pytools_runserver")
+            return None
+
+        def check_requirements():
+            """if requirements valid
+
+            Raises:
+                RequirementInvalid
+            """
+            if not valid_attribute(view, locations[0]):
+                raise RequirementInvalid("invalid scope")
+
+            if not feature_enabled(settings.F_AUTOCOMPLETE):
+                raise RequirementInvalid(
+                    "feature disabled: %s" % repr(settings.F_AUTOCOMPLETE)
+                )
+
+            if not server_capable(settings.F_AUTOCOMPLETE):
+                raise RequirementInvalid(
+                    "server incapable: %s" % repr(settings.F_AUTOCOMPLETE)
+                )
+
+        try:
+            check_requirements()
+            location = max(view.sel()[0].a, locations[0])
+            params = CompletionParams.from_view(view, location)
+
+        except ValueError as err:
+            logger.debug(err)
+            return None
+
+        except RequirementInvalid as err:
+            logger.debug(err)
+            return None
+
+        else:
             if self.completion:
                 completion = self.completion
                 self.completion = None
@@ -602,23 +636,15 @@ class Event(sublime_plugin.ViewEventListener):
                 if self.old_end_position != params.end:
                     logger.debug("invalid context")
                     return None
-
                 return completion
-
-            if not SERVER_ONLINE:
-                view.window().run_command("pytools_runserver")
-                return None
-
-            if not server_capable(settings.F_AUTOCOMPLETE):
-                return None
 
             thread = threading.Thread(
                 target=self.fetch_completions, args=(prefix, params)
             )
             thread.start()
+            return None
 
-    @staticmethod
-    def decorate(content) -> str:
+    def decorate(self, content) -> str:
         """decorate popup content"""
         return '<div style="padding: .5em">%s</div>' % content
 
@@ -668,9 +694,9 @@ class Event(sublime_plugin.ViewEventListener):
                 )
                 logger.debug(result)
 
-            except client.ServerOffline:
+            except client.ServerOffline as err:
                 set_offline()
-                logger.debug("ServerOffline")
+                logger.debug(err)
 
             except Exception:
                 logger.error("fetch documentation", exc_info=True)
@@ -703,54 +729,80 @@ class Event(sublime_plugin.ViewEventListener):
 
         view = self.view
 
-        if all(
-            [
-                valid_source(view),
-                valid_attribute(view, point),
-                feature_enabled(settings.F_DOCUMENTATION),
-                hover_zone == sublime.HOVER_TEXT,
-            ]
-        ):
+        def check_docstring_requirements():
+            if not valid_attribute(view, point):
+                raise RequirementInvalid("invalid scope")
+
+            if not feature_enabled(settings.F_DOCUMENTATION):
+                raise RequirementInvalid(
+                    "feature disabled: %s" % repr(settings.F_DOCUMENTATION)
+                )
+
+            if not server_capable(settings.F_DOCUMENTATION):
+                raise RequirementInvalid(
+                    "server incapable: %s" % repr(settings.F_DOCUMENTATION)
+                )
+
+        def hover_text():
             logger.info("on get documentation")
+
             if not SERVER_ONLINE:
                 view.window().run_command("pytools_runserver")
                 return
 
-            if not server_capable(settings.F_DOCUMENTATION):
+            try:
+                check_docstring_requirements()
+            except RequirementInvalid as err:
+                logger.debug(err)
                 return
-
-            thread = threading.Thread(target=self.fetch_documentation, args=(point,))
-            thread.start()
-
-        elif all(
-            [
-                valid_source(view),
-                valid_attribute(view, point),
-                any(
-                    [
-                        feature_enabled(settings.F_DIAGNOSTIC),
-                        feature_enabled(settings.F_VALIDATE),
-                    ]
-                ),
-                hover_zone == sublime.HOVER_GUTTER,
-                DIAGNOSTICS,
-            ]
-        ):
-            logger.info("on show diagnostic")
-            row, _ = view.rowcol(point)
-            if self.cached_diagnostic:
-                content = self.cached_diagnostic.get(row)
-                logger.debug("cached : %s", content)
             else:
-                diagnostic_message = document.diagnostic_message(DIAGNOSTICS, view)
-                self.cached_diagnostic = diagnostic_message
+                thread = threading.Thread(
+                    target=self.fetch_documentation, args=(point,)
+                )
+                thread.start()
+
+        def check_lint_message_requirements():
+            if not DIAGNOSTICS:
+                raise RequirementInvalid("no any diagnostics message")
+
+            if not valid_source(view):
+                raise RequirementInvalid("invalid source")
+
+            if not any(
+                [
+                    feature_enabled(settings.F_DIAGNOSTIC),
+                    feature_enabled(settings.F_VALIDATE),
+                ]
+            ):
+                raise RequirementInvalid("feature disabled")
+
+        def hover_gutter():
+            logger.info("on show diagnostic")
+
+            try:
+                check_lint_message_requirements()
+
+            except RequirementInvalid as err:
+                logger.debug(err)
+
+            else:
+                if not self.cached_diagnostic:
+                    diagnostic_message = document.diagnostic_message(DIAGNOSTICS, view)
+                    self.cached_diagnostic = diagnostic_message
+
+                row, _ = view.rowcol(point)
                 content = self.cached_diagnostic.get(row)
                 logger.debug("loaded : %s", content)
 
-            if content:  # any content
-                document.show_popup(
-                    view, self.decorate(content), point, callback=None, update=True
-                )
+                if content:  # any content
+                    document.show_popup(
+                        view, self.decorate(content), point, callback=None, update=True
+                    )
+
+        if hover_zone == sublime.HOVER_TEXT:
+            hover_text()
+        elif hover_zone == sublime.HOVER_GUTTER:
+            hover_gutter()
 
     def clear_cached_diagnostic(self):
         if self.cached_diagnostic:
@@ -785,15 +837,31 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
         logger.info("on format document")
 
         view = self.view
+        if not SERVER_ONLINE:
+            view.window().run_command("pytools_runserver")
+            return
 
-        if all([valid_source(view), feature_enabled(settings.F_DOCUMENT_FORMATTING),]):
-            if not SERVER_ONLINE:
-                view.window().run_command("pytools_runserver")
-                return
+        def check_requirements():
+            if not valid_source(view):
+                raise RequirementInvalid("invalid source")
+
+            if not feature_enabled(settings.F_DOCUMENT_FORMATTING):
+                raise RequirementInvalid(
+                    "feature disabled: %s" % repr(settings.F_DOCUMENT_FORMATTING)
+                )
 
             if not server_capable(settings.F_DOCUMENT_FORMATTING):
-                return
+                raise RequirementInvalid(
+                    "server incapable: %s" % repr(settings.F_DOCUMENT_FORMATTING)
+                )
 
+        try:
+            check_requirements()
+
+        except RequirementInvalid as err:
+            logger.debug(err)
+
+        else:
             source = view.substr(sublime.Region(0, view.size()))
             file_name = view.file_name()
 
@@ -810,9 +878,9 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
             result = client.format_code(source)
             logger.debug(result)
 
-        except client.ServerOffline:
+        except client.ServerOffline as err:
             set_offline()
-            logger.debug("ServerOffline")
+            logger.debug(err)
 
         except Exception:
             logger.error("format document", exc_info=True)
@@ -826,7 +894,6 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
                 output_panel.show()
                 return
 
-            output_panel.clear()
             output_panel.hide()
 
             window = sublime.active_window()
@@ -840,10 +907,6 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
 
     def is_visible(self):
         return valid_source(self.view)
-
-
-class RequirementInvalid(Exception):
-    """invalid required input"""
 
 
 class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
@@ -917,8 +980,10 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
         try:
             result = lint_functions[lint_method](path)
-        except client.ServerOffline:
-            logger.debug("ServerOffline")
+
+        except client.ServerOffline as err:
+            logger.debug(err)
+
         else:
             output_panel = document.OutputPanel(self.view.window(), OUTPUT_PANEL_NAME)
 
@@ -928,7 +993,6 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
                 output_panel.show()
                 return
 
-            output_panel.clear()
             output_panel.hide()
 
             global DIAGNOSTICS
@@ -959,9 +1023,9 @@ class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
         ]
 
         def build_message(diagnostics):
-            for diagnostics in filtered_diagnostics:
-                message = diagnostics.message
-                row, col = self.view.rowcol(diagnostics.region.a)
+            for diagnostic in diagnostics:
+                message = diagnostic.message
+                row, col = self.view.rowcol(diagnostic.region.a)
                 file_name = os.path.basename(self.view.file_name())
                 yield "{file_name}:{row}:{col}: {message}".format(
                     file_name=file_name, row=row + 1, col=col, message=message
@@ -1038,8 +1102,13 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
         if not server_capable(settings.F_RENAME):
             raise RequirementInvalid("server incapable %s" % repr(settings.F_RENAME))
 
-        if view.is_dirty():
-            sublime.error_message("Error!\n\nUnable rename unsaved document.")
+        if any([v for v in sublime.active_window().views() if v.is_dirty()]):
+            sublime.error_message(
+                (
+                    "Error !\n\nUnable rename unsaved document. "
+                    "Save all documents before perform rename."
+                )
+            )
             raise RequirementInvalid("unable rename unsaved view")
 
         selection = view.sel()[0]
@@ -1089,8 +1158,8 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
 
             result = client.rename(file_path=path, offset=offset, new_name=new_name)
 
-        except client.ServerOffline:
-            logger.debug("ServerOffline")
+        except client.ServerOffline as err:
+            logger.debug(err)
 
         except RequirementInvalid as err:
             logger.debug(err)
@@ -1110,36 +1179,46 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
     @staticmethod
     def apply_renames(changes: "Dict[str, Any]"):
         window = sublime.active_window()
+
+        def update_document(change):
+            view = window.open_file(change["file_name"])
+
+            # make sure if document loaded
+            retry = 0.0
+            while True:
+                if view.is_loading():
+                    time.sleep(0.5)
+                    retry += 0.5
+                    continue
+
+                if retry >= 30.0:  # max wait 30 second
+                    raise Exception("unable load file")
+                break
+
+            view.run_command(
+                "pytools_apply_rpc_change", args={"changes": change["changes"]}
+            )
+
+        def rename_document(change):
+            old_name = change["changes"]["old_name"]
+            new_name = change["changes"]["new_name"]
+
+            path_type = "directory" if os.path.isdir(old_name) else ""
+            if sublime.ok_cancel_dialog(
+                "Would you line rename %s:\n\n  %s\n  to:\n  %s"
+                % (path_type, old_name, new_name)
+            ):
+                os.rename(old_name, new_name)
+                if os.path.isfile(new_name):
+                    window.open_file(new_name)
+
         for change in changes:
             try:
                 if change["type"] == "change":
-                    view = window.open_file(change["file_name"])
-
-                    # make sure if document loaded
-                    retry = 0.0
-                    while True:
-                        if view.is_loading():
-                            time.sleep(0.5)
-                            retry += 0.5
-                            continue
-
-                        if retry >= 30.0:  # max wait 30 second
-                            raise Exception("unable load file")
-                        break
-
-                    view.run_command(
-                        "pytools_apply_rpc_change", args={"changes": change["changes"]}
-                    )
+                    update_document(change)
 
                 elif change["type"] == "rename":
-                    old_name = change["changes"]["old_name"]
-                    new_name = change["changes"]["new_name"]
-                    path_type = "directory" if os.path.isdir(old_name) else ""
-                    if sublime.ok_cancel_dialog(
-                        "Would you line rename %s:\n\n  %s\n  to:\n  %s"
-                        % (path_type, old_name, new_name)
-                    ):
-                        os.rename(old_name, new_name)
+                    rename_document(change)
 
             except (KeyError, FileNotFoundError):
                 logger.error("error apply_renames", exc_info=True)

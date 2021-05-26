@@ -293,14 +293,15 @@ def diagnostic_message(
 class OutputPanel:
     """Output panel handler"""
 
-    def __init__(self, window: sublime.Window, name: str):
+    def __init__(self, window: sublime.Window, name: str, reset_message=True):
         self.panel_name = name
         self.window = window
         self.panel = window.get_output_panel(self.panel_name)
         if not self.panel:
             self.panel = window.create_output_panel(self.panel_name)
             self.panel.set_read_only(False)
-        else:
+        
+        if reset_message:
             self.clear()
 
     def append(self, *args):
