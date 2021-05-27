@@ -635,7 +635,12 @@ class Event(sublime_plugin.ViewEventListener):
                 # invalid context
                 if self.old_end_position != params.end:
                     logger.debug("invalid context")
-                    return None
+                    return (
+                        [],  # empty completion
+                        sublime.INHIBIT_WORD_COMPLETIONS
+                        | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
+                    )
+
                 return completion
 
             thread = threading.Thread(
