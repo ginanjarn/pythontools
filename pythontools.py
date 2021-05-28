@@ -614,6 +614,11 @@ class Event(sublime_plugin.ViewEventListener):
                     "server incapable: %s" % repr(settings.F_AUTOCOMPLETE)
                 )
 
+        empty_completion = (
+            [],  # empty completion
+            sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
+        )
+
         try:
             check_requirements()
             location = max(view.sel()[0].a, locations[0])
@@ -621,7 +626,7 @@ class Event(sublime_plugin.ViewEventListener):
 
         except ValueError as err:
             logger.debug(err)
-            return None
+            return empty_completion
 
         except RequirementInvalid as err:
             logger.debug(err)
@@ -635,11 +640,7 @@ class Event(sublime_plugin.ViewEventListener):
                 # invalid context
                 if self.old_end_position != params.end:
                     logger.debug("invalid context")
-                    return (
-                        [],  # empty completion
-                        sublime.INHIBIT_WORD_COMPLETIONS
-                        | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
-                    )
+                    return empty_completion
 
                 return completion
 
@@ -1027,16 +1028,19 @@ class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
             if diagnostic.view_id == self.view.id()
         ]
 
+        window = sublime.active_window()
+        view = window.active_view()
+
         def build_message(diagnostics):
             for diagnostic in diagnostics:
                 message = diagnostic.message
-                row, col = self.view.rowcol(diagnostic.region.a)
-                file_name = os.path.basename(self.view.file_name())
+                row, col = view.rowcol(diagnostic.region.a)
+                file_name = os.path.basename(view.file_name())
                 yield "{file_name}:{row}:{col}: {message}".format(
                     file_name=file_name, row=row + 1, col=col, message=message
                 )
 
-        output_panel = document.OutputPanel(self.view.window(), OUTPUT_PANEL_NAME)
+        output_panel = document.OutputPanel(window, OUTPUT_PANEL_NAME)
 
         if filtered_diagnostics:
             output_panel.append(*build_message(filtered_diagnostics))
@@ -1052,7 +1056,7 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         logger.info("on clear diagnostic")
 
-        view = self.view
+        view = sublime.active_window().active_view()  # active document view
         if not valid_source(view):
             return
 
