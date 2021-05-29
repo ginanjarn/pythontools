@@ -505,6 +505,34 @@ class CompletionParams:
         return cls(start=start, end=end)
 
 
+class Completion:
+    def __init__(self, completions: "Optional[List[Tuple[str, str]]]" = None):
+
+        self.completions = completions if completions else []
+        self.completion_results = [completion[1] for completion in self.completions]
+
+    def is_completed(self, prefix):
+        return prefix in self.completion_results
+
+    def to_sublime(self):
+        return (
+            self.completions,
+            sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
+        )
+
+    @staticmethod
+    def build_completion(completions: "Iterable[str, Any]") -> "Iterator[Any, Any]":
+        for completion in completions:
+            yield (
+                "%s  \t%s" % (completion["label"], completion["type"]),
+                completion["label"],
+            )
+
+    @classmethod
+    def from_rpc(cls, params: "List[str, Any]"):
+        return cls(list(Completion.build_completion(params)))
+
+
 class RequirementInvalid(Exception):
     """invalid required input"""
 
@@ -572,11 +600,7 @@ class Event(sublime_plugin.ViewEventListener):
                     logger.info(result.error)
                     return
 
-                self.completion = (
-                    list(self.build_completion(result.results)),
-                    sublime.INHIBIT_WORD_COMPLETIONS
-                    | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
-                )
+                self.completion = Completion.from_rpc(result.results)
 
                 # set cache
                 self.temp_completion_src = source
@@ -614,10 +638,7 @@ class Event(sublime_plugin.ViewEventListener):
                     "server incapable: %s" % repr(settings.F_AUTOCOMPLETE)
                 )
 
-        empty_completion = (
-            [],  # empty completion
-            sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
-        )
+        empty_completion = Completion()
 
         try:
             check_requirements()
@@ -626,7 +647,7 @@ class Event(sublime_plugin.ViewEventListener):
 
         except ValueError as err:
             logger.debug(err)
-            return empty_completion
+            return empty_completion.to_sublime()
 
         except RequirementInvalid as err:
             logger.debug(err)
@@ -640,9 +661,13 @@ class Event(sublime_plugin.ViewEventListener):
                 # invalid context
                 if self.old_end_position != params.end:
                     logger.debug("invalid context")
-                    return empty_completion
+                    return empty_completion.to_sublime()
 
-                return completion
+                if completion.is_completed(prefix):
+                    logger.debug("already completed")
+                    return empty_completion.to_sublime()
+
+                return completion.to_sublime()
 
             thread = threading.Thread(
                 target=self.fetch_completions, args=(prefix, params)
