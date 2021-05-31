@@ -27,6 +27,12 @@ def show_completions(view: sublime.View) -> None:
     )
 
 
+def hide_completions(view: sublime.View) -> None:
+    """Opens (forced) the sublime autocomplete window"""
+
+    view.run_command("hide_auto_complete")
+
+
 def show_popup(
     view: sublime.View,
     content: str,
@@ -300,7 +306,7 @@ class OutputPanel:
         if not self.panel:
             self.panel = window.create_output_panel(self.panel_name)
             self.panel.set_read_only(False)
-        
+
         if reset_message:
             self.clear()
 

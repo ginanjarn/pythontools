@@ -485,19 +485,23 @@ class CompletionParams:
         word_region = view.word(location)
 
         start = 0
-        prefix = view.substr(word_region)
+        prefix = view.substr(word_region).rstrip()
+
+        def access_member(word_region):
+            return view.substr(sublime.Region(word_region.a - 1, word_region.a)) == "."
 
         if prefix.isidentifier():
-            # if prefix is identifier
             if word_region.size() > 1:
-                # more than 2 characted completed
-                end = word_region.a + 1  # complete at first identifier offset
+                end = word_region.a + 1
             else:
-                # single character
                 end = location
+
+            if access_member(word_region):
+                logger.debug("access member")
+                end = word_region.a
         else:
             # only next to dot -> access member
-            if prefix.strip().endswith("."):
+            if prefix.endswith(".", 0, 1):
                 end = location
             else:
                 raise ValueError("invalid prefix to complete")
@@ -537,6 +541,9 @@ class RequirementInvalid(Exception):
     """invalid required input"""
 
 
+COMPLETION_LOCK = threading.Lock()
+
+
 class Event(sublime_plugin.ViewEventListener):
     """Event handler"""
 
@@ -545,6 +552,7 @@ class Event(sublime_plugin.ViewEventListener):
         self.view = view
 
         self.completion = None
+        # self.completing_lock = threading.Lock()
 
         self.old_end_position = None
         self.cached_completion = None
@@ -578,6 +586,8 @@ class Event(sublime_plugin.ViewEventListener):
             logger.debug("using cache")
             self.completion = self.cached_completion
         else:
+            # self.completing_lock.acquire()
+            COMPLETION_LOCK.acquire()
             try:
                 initialize()
 
@@ -605,6 +615,10 @@ class Event(sublime_plugin.ViewEventListener):
                 # set cache
                 self.temp_completion_src = source
                 self.cached_completion = self.completion
+
+            finally:
+                # self.completing_lock.release()
+                COMPLETION_LOCK.release()
 
         self.old_end_position = params.end
         document.show_completions(view)
@@ -640,6 +654,10 @@ class Event(sublime_plugin.ViewEventListener):
 
         empty_completion = Completion()
 
+        # if self.completing_lock.locked():
+        if COMPLETION_LOCK.locked():
+            return empty_completion.to_sublime()
+
         try:
             check_requirements()
             location = max(view.sel()[0].a, locations[0])
@@ -647,6 +665,7 @@ class Event(sublime_plugin.ViewEventListener):
 
         except ValueError as err:
             logger.debug(err)
+            document.hide_completions(view)
             return empty_completion.to_sublime()
 
         except RequirementInvalid as err:
@@ -654,26 +673,32 @@ class Event(sublime_plugin.ViewEventListener):
             return None
 
         else:
+            logger.debug("prefix = %s", repr(prefix))
             if self.completion:
                 completion = self.completion
                 self.completion = None
 
                 # invalid context
                 if self.old_end_position != params.end:
-                    logger.debug("invalid context")
+                    logger.debug(
+                        "invalid context: %s != %s", self.old_end_position, params.end
+                    )
+                    document.hide_completions(view)
                     return empty_completion.to_sublime()
 
                 if completion.is_completed(prefix):
                     logger.debug("already completed")
+                    document.hide_completions(view)
                     return empty_completion.to_sublime()
 
+                logger.debug("show completion results")
                 return completion.to_sublime()
 
             thread = threading.Thread(
                 target=self.fetch_completions, args=(prefix, params)
             )
             thread.start()
-            return None
+            return empty_completion.to_sublime()
 
     def decorate(self, content) -> str:
         """decorate popup content"""
