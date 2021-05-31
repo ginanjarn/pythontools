@@ -49,11 +49,17 @@ try:
         module_name = "" if help_.module_name == "__main__" else f"{help_.module_name}."
         header = f"<a href='#' style='text-decoration:none'>{module_name}{help_.name} <i>({help_.type})</i></a>"
 
+        try:
+            docstring = help_.docstring()
+        except ValueError as err:
+            logger.debug(err)
+            docstring = ""
+
         return (
             None
             if help_.is_keyword
             else rpc.Documentation.builder(
-                html_result=render_html(header, help_.docstring()),
+                html_result=render_html(header, docstring),
                 link=rpc.DocumentLink.builder(
                     uri=str(help_.module_path) if help_.module_path else None,
                     position=rpc.Position.builder(
