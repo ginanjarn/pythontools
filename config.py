@@ -11,7 +11,6 @@ DOCUMENT_FORMATTING = False
 DIAGNOSTIC = False
 VALIDATE = False
 DIAGNOSTIC_PANEL = False
-ABSOLUTE_IMPORT = False
 
 
 @contextmanager
@@ -31,7 +30,6 @@ def update_menu():
     global DOCUMENT_FORMATTING
     global DIAGNOSTIC
     global VALIDATE
-    global ABSOLUTE_IMPORT
     global DIAGNOSTIC_PANEL
 
     with load_settings(save=False) as settings:
@@ -40,7 +38,6 @@ def update_menu():
         DOCUMENT_FORMATTING = settings.get(base_settings.F_DOCUMENT_FORMATTING, True)
         DIAGNOSTIC = settings.get(base_settings.F_DIAGNOSTIC, True)
         VALIDATE = settings.get(base_settings.F_VALIDATE, True)
-        ABSOLUTE_IMPORT = settings.get(base_settings.W_ABSOLUTE_IMPORT, True)
         DIAGNOSTIC_PANEL = settings.get(base_settings.W_DIAGNOSTIC_PANEL, True)
 
 
@@ -112,14 +109,3 @@ class PytoolsSetDiagnosticpanelCommand(sublime_plugin.TextCommand):
 
     def is_checked(self):
         return DIAGNOSTIC_PANEL
-
-
-class PytoolsSetAbsoluteimportCommand(sublime_plugin.TextCommand):
-    def run(self, edit):
-        with load_settings(save=True) as settings:
-            value = settings.get(base_settings.W_ABSOLUTE_IMPORT, True)
-            settings.set(base_settings.W_ABSOLUTE_IMPORT, not value)
-            update_menu()
-
-    def is_checked(self):
-        return ABSOLUTE_IMPORT

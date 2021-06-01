@@ -48,15 +48,6 @@
               },
               {
                 "caption": "-",
-                "id": "workspace"
-              },
-              {
-                "caption": "Absolute Import",
-                "command": "pytools_set_absoluteimport",
-                "id": "workspace"
-              },
-              {
-                "caption": "-",
                 "id": "settings"
               },
               {

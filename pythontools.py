@@ -442,21 +442,36 @@ def plugin_loaded():
     # TODO: HANDLE ON SETTINGS CHANGE --------------------------------------------
 
 
-def absolute_folder(view):
+def project_path(view: sublime.View):
 
     file_name = view.file_name()
     if not file_name:
         return None
 
-    matches = [
-        folder for folder in view.window().folders() if file_name.startswith(folder)
-    ]
+    try:
+        path = max(
+            (
+                folder
+                for folder in view.window().folders()
+                if file_name.startswith(folder)
+            )
+        )
 
-    if any(matches):
-        # return the longest matched path
-        return max(matches)
+    except ValueError:
+        return os.path.dirname(file_name)
+    else:
+        return path
 
-    return file_name
+
+ACTIVE_PROJECT = ""
+
+
+def set_active_project():
+    """set project path to active view"""
+
+    global ACTIVE_PROJECT
+    view = sublime.active_window().active_view()
+    ACTIVE_PROJECT = project_path(view)
 
 
 # Diagnostic data holder
@@ -541,9 +556,6 @@ class RequirementInvalid(Exception):
     """invalid required input"""
 
 
-COMPLETION_LOCK = threading.Lock()
-
-
 class Event(sublime_plugin.ViewEventListener):
     """Event handler"""
 
@@ -552,7 +564,6 @@ class Event(sublime_plugin.ViewEventListener):
         self.view = view
 
         self.completion = None
-        # self.completing_lock = threading.Lock()
 
         self.old_end_position = None
         self.cached_completion = None
@@ -586,17 +597,13 @@ class Event(sublime_plugin.ViewEventListener):
             logger.debug("using cache")
             self.completion = self.cached_completion
         else:
-            # self.completing_lock.acquire()
-            COMPLETION_LOCK.acquire()
             try:
                 initialize()
 
-                if feature_enabled(settings.W_ABSOLUTE_IMPORT):
-                    work_dir = absolute_folder(view)
-                else:
-                    work_dir = os.path.dirname(view.file_name())
+                if not ACTIVE_PROJECT:
+                    set_active_project()
 
-                change_workspace(work_dir)
+                change_workspace(ACTIVE_PROJECT)
 
                 result = client.fetch_completion(source, line, character)
 
@@ -615,10 +622,6 @@ class Event(sublime_plugin.ViewEventListener):
                 # set cache
                 self.temp_completion_src = source
                 self.cached_completion = self.completion
-
-            finally:
-                # self.completing_lock.release()
-                COMPLETION_LOCK.release()
 
         self.old_end_position = params.end
         document.show_completions(view)
@@ -653,10 +656,6 @@ class Event(sublime_plugin.ViewEventListener):
                 )
 
         empty_completion = Completion()
-
-        # if self.completing_lock.locked():
-        if COMPLETION_LOCK.locked():
-            return empty_completion.to_sublime()
 
         try:
             check_requirements()
@@ -738,12 +737,10 @@ class Event(sublime_plugin.ViewEventListener):
             try:
                 initialize()
 
-                if feature_enabled(settings.W_ABSOLUTE_IMPORT):
-                    work_dir = absolute_folder(view)
-                else:
-                    work_dir = os.path.dirname(view.file_name())
+                if not ACTIVE_PROJECT:
+                    set_active_project()
 
-                change_workspace(work_dir)
+                change_workspace(ACTIVE_PROJECT)
 
                 result = client.fetch_documentation(
                     view.substr(source_region), line, character
@@ -868,8 +865,18 @@ class Event(sublime_plugin.ViewEventListener):
         self.clear_cached_diagnostic()
 
     def on_activated(self):
-        self.clear_cached_diagnostic()
-        self.view.run_command("pytools_show_diagnostic_panel")
+        global ALL_ENABLED
+
+        if valid_source(self.view):
+            ALL_ENABLED = True
+            set_active_project()
+            self.clear_cached_diagnostic()
+
+            if logger.level > logging.INFO:
+                self.view.run_command("pytools_show_diagnostic_panel")
+        else:
+            ALL_ENABLED = False
+
 
     def on_pre_close(self):
         self.view.run_command("pytools_clear_diagnostic")
@@ -1208,12 +1215,8 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
             if not str.isidentifier(new_name):
                 raise RequirementInvalid("invalid new name %s" % repr(new_name))
 
-            if feature_enabled(settings.W_ABSOLUTE_IMPORT):
-                work_dir = absolute_folder(view)
-            else:
-                work_dir = os.path.dirname(view.file_name())
-
-            change_workspace(work_dir)
+            set_active_project()
+            change_workspace(ACTIVE_PROJECT)
 
             result = client.rename(file_path=path, offset=offset, new_name=new_name)
 
