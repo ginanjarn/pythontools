@@ -294,10 +294,6 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
     def run(self):
         logger.info("on run server")
 
-        view = self.window.active_view()
-        if not valid_source(view):
-            return  # cancel if not python file
-
         if SERVER_ERROR:
             logger.debug("server error")
             return  # cancel if server error
@@ -313,11 +309,10 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             if config:
                 self.window.run_command("pytools_python_interpreter")
 
-            # TODO: HANDLE ON IGNORE ------------------------------------------
             else:
+                # disable all feature if python interpreter not configured
                 global ALL_ENABLED
                 ALL_ENABLED = False
-            # -----------------------------------------------------------------
 
             return
 
@@ -390,6 +385,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
         try:
             try_initialize()
+
         except TimeoutError:
             # set server error if failed initialize
             global SERVER_ERROR
@@ -439,7 +435,6 @@ def plugin_loaded():
 
     thread = threading.Thread(target=initialize)
     thread.start()
-    # TODO: HANDLE ON SETTINGS CHANGE --------------------------------------------
 
 
 def project_path(view: sublime.View):
@@ -528,10 +523,10 @@ class Completion:
     def __init__(self, completions: "Optional[List[Tuple[str, str]]]" = None):
 
         self.completions = completions if completions else []
-        self.completion_results = [completion[1] for completion in self.completions]
+        self._completion_results = [completion[1] for completion in self.completions]
 
     def is_completed(self, prefix):
-        return prefix in self.completion_results
+        return prefix in self._completion_results
 
     def to_sublime(self):
         return (
@@ -550,6 +545,10 @@ class Completion:
     @classmethod
     def from_rpc(cls, params: "List[str, Any]"):
         return cls(list(Completion.build_completion(params)))
+
+
+# plugin only enabled on python source
+PLUGIN_ENABLED = False
 
 
 class RequirementInvalid(Exception):
@@ -629,6 +628,9 @@ class Event(sublime_plugin.ViewEventListener):
     def on_query_completions(self, prefix, locations):
         """on_query_completion event"""
 
+        if not PLUGIN_ENABLED:
+            return None
+
         logger.info("on query completions")
         view = self.view
 
@@ -642,8 +644,6 @@ class Event(sublime_plugin.ViewEventListener):
             Raises:
                 RequirementInvalid
             """
-            if not valid_attribute(view, locations[0]):
-                raise RequirementInvalid("invalid scope")
 
             if not feature_enabled(settings.F_AUTOCOMPLETE):
                 raise RequirementInvalid(
@@ -654,6 +654,9 @@ class Event(sublime_plugin.ViewEventListener):
                 raise RequirementInvalid(
                     "server incapable: %s" % repr(settings.F_AUTOCOMPLETE)
                 )
+
+            if not valid_attribute(view, locations[0]):
+                raise RequirementInvalid("invalid scope")
 
         empty_completion = Completion()
 
@@ -780,11 +783,12 @@ class Event(sublime_plugin.ViewEventListener):
     def on_hover(self, point, hover_zone):
         """on_hover event"""
 
+        if not PLUGIN_ENABLED:
+            return
+
         view = self.view
 
         def check_docstring_requirements():
-            if not valid_attribute(view, point):
-                raise RequirementInvalid("invalid scope")
 
             if not feature_enabled(settings.F_DOCUMENTATION):
                 raise RequirementInvalid(
@@ -795,6 +799,9 @@ class Event(sublime_plugin.ViewEventListener):
                 raise RequirementInvalid(
                     "server incapable: %s" % repr(settings.F_DOCUMENTATION)
                 )
+
+            if not valid_attribute(view, point):
+                raise RequirementInvalid("invalid scope")
 
         def hover_text():
             logger.info("on get documentation")
@@ -865,18 +872,17 @@ class Event(sublime_plugin.ViewEventListener):
         self.clear_cached_diagnostic()
 
     def on_activated(self):
-        global ALL_ENABLED
+        global PLUGIN_ENABLED
 
         if valid_source(self.view):
-            ALL_ENABLED = True
+            PLUGIN_ENABLED = True
             set_active_project()
             self.clear_cached_diagnostic()
 
             if logger.level > logging.INFO:
                 self.view.run_command("pytools_show_diagnostic_panel")
         else:
-            ALL_ENABLED = False
-
+            PLUGIN_ENABLED = False
 
     def on_pre_close(self):
         self.view.run_command("pytools_clear_diagnostic")
@@ -897,6 +903,10 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
 
     def run(self, edit):
+
+        if not PLUGIN_ENABLED:
+            return
+
         logger.info("on format document")
 
         view = self.view
@@ -905,8 +915,6 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
             return
 
         def check_requirements():
-            if not valid_source(view):
-                raise RequirementInvalid("invalid source")
 
             if not feature_enabled(settings.F_DOCUMENT_FORMATTING):
                 raise RequirementInvalid(
@@ -917,6 +925,9 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
                 raise RequirementInvalid(
                     "server incapable: %s" % repr(settings.F_DOCUMENT_FORMATTING)
                 )
+
+            if not valid_source(view):
+                raise RequirementInvalid("invalid source")
 
         try:
             check_requirements()
@@ -980,6 +991,10 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
     @boundary_lock
     def run(self, edit, path=None, quick=False):
+
+        if not PLUGIN_ENABLED:
+            return
+
         logger.info("on diagnostic")
 
         # clear current diagnostic
@@ -1070,11 +1085,18 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
             self.view.run_command("pytools_show_diagnostic_panel")
 
+    def is_visible(self):
+        return valid_source(self.view)
+
 
 class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
     """diagnostic panel"""
 
     def run(self, edit):
+
+        if not PLUGIN_ENABLED:
+            return
+
         if feature_enabled(settings.W_DIAGNOSTIC_PANEL):
             self.show_diagnostic_panel()
 
@@ -1111,6 +1133,10 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
     """Diagnostic command"""
 
     def run(self, edit):
+
+        if not PLUGIN_ENABLED:
+            return
+
         logger.info("on clear diagnostic")
 
         view = sublime.active_window().active_view()  # active document view
@@ -1136,11 +1162,18 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
         output_panel = document.OutputPanel(self.view.window(), OUTPUT_PANEL_NAME)
         output_panel.destroy()
 
+    def is_visible(self):
+        return valid_source(self.view)
+
 
 class PytoolsRenameCommand(sublime_plugin.TextCommand):
     """Diagnostic command"""
 
     def run(self, edit):
+
+        if not PLUGIN_ENABLED:
+            return
+
         logger.info("on rename")
 
         try:
@@ -1207,7 +1240,6 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
 
     @instance_lock
     def rename_thread(self, path: str, offset: int, new_name: str):
-        view = sublime.active_window().active_view()
         try:
             if new_name == self.target_identifier:
                 raise RequirementInvalid("nothing changed")
@@ -1237,6 +1269,9 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
                 # apply changes
                 logger.debug(result.results)
                 PytoolsRenameCommand.apply_renames(result.results)
+
+    def is_visible(self):
+        return valid_source(self.view)
 
     @staticmethod
     def apply_renames(changes: "Dict[str, Any]"):
@@ -1297,6 +1332,7 @@ class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):
     """Shutdown command"""
 
     def run(self):
+        print("PLUGIN_ENABLED : %s" % PLUGIN_ENABLED)
         print(
             "SERVER_ONLINE : %s, SERVER_ERROR : %s, SERVER_CAPABILITY : %s"
             % (SERVER_ONLINE, SERVER_ERROR, SERVER_CAPABILITY)
