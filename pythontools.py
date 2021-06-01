@@ -869,9 +869,20 @@ class Event(sublime_plugin.ViewEventListener):
             self.cached_diagnostic = None
 
     def on_modified(self):
+
+        if not PLUGIN_ENABLED:
+            return
+
         self.clear_cached_diagnostic()
+        view = self.view
+        prefix = view.substr(view.word(view.sel()[0].a))
+
+        # hide completion if prefix not identifier
+        if not str.isidentifier(prefix) and view.is_auto_complete_visible():
+            document.hide_completions(view)
 
     def on_activated(self):
+
         global PLUGIN_ENABLED
 
         if valid_source(self.view):
@@ -885,13 +896,25 @@ class Event(sublime_plugin.ViewEventListener):
             PLUGIN_ENABLED = False
 
     def on_pre_close(self):
+
+        if not PLUGIN_ENABLED:
+            return
+
         self.view.run_command("pytools_clear_diagnostic")
 
     def on_pre_save_async(self) -> None:
+
+        if not PLUGIN_ENABLED:
+            return
+
         self.clear_cached_diagnostic()
         self.view.run_command("pytools_clear_diagnostic")
 
     def on_post_save_async(self) -> None:
+
+        if not PLUGIN_ENABLED:
+            return
+
         if valid_source(self.view):
             path = self.view.file_name()
             self.view.run_command(
