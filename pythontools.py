@@ -423,11 +423,23 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
             sublime.status_message("SERVER TERMINATED")
 
 
+def config_preferences():
+    setting = sublime.load_settings("Python.sublime-settings")
+    setting.set("index_files", False)
+    setting.set("auto_complete_use_index", False)
+    setting.set("translate_tabs_to_spaces", True)
+    setting.set("show_definitions", False)
+    setting.set("tab_completion", False)
+    sublime.save_settings("Python.sublime-settings")
+
+
 def plugin_loaded():
     """on plugin loaded
 
     sublime definition for plugin_loaded event
     """
+
+    config_preferences()
 
     # Enable default on loaded
     global ALL_ENABLED
