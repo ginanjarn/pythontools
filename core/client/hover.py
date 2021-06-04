@@ -8,7 +8,8 @@ from .remote import RequestMessage, ResponseMessage, request, generate_id
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
-sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+template = "%(asctime)s - %(levelname)s::%(module)s: %(lineno)d\t%(message)s"
+sh.setFormatter(logging.Formatter(template))
 sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
@@ -28,6 +29,6 @@ def fetch_documentation(src: str, line: int, character: int) -> "ResponseMessage
         "location": {"line": line, "character": character},
     }
     logger.debug(message)
-    response = request(message.to_rpc(), timeout=5)
+    response = request(message.to_rpc(), timeout=15)
     logger.debug(response)
     return ResponseMessage.from_rpc(response)

@@ -1,10 +1,12 @@
 """remote handler"""
 
 
-from re import findall
+import io
+import re
 import os
 import socket
 import subprocess
+import time
 import json
 import random
 import logging
@@ -12,47 +14,61 @@ import logging
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
-sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+template = "%(asctime)s - %(levelname)s::%(module)s: %(lineno)d\t%(message)s"
+sh.setFormatter(logging.Formatter(template))
 sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-RPC_SEPARATOR = b"\r\n\r\n"
+class TransactionMessage:
+    def __init__(self, content, encoding="utf-8", headers=None):
+        self._content_encoded = content.encode(encoding)
+        self.encoding = encoding
+        self._headers = {
+            "Content-Length": len(self._content_encoded),
+            "encoding": self.encoding,
+        }
 
+    @property
+    def content(self):
+        return self._content_encoded.decode(self.encoding)
 
-def get_content_length(header: bytes):
-    """get content length"""
+    def to_bytes(self):
+        headers = []
+        for key, value in self._headers.items():
+            headers.append(
+                "{key}: {value}".format(key=key, value=value).encode(self.encoding)
+            )
 
-    found = findall(r"Content-Length: (\d*)\s?", header.decode("ascii"))
-    if not any(found):
-        raise ValueError("unable to get Content-Length in header")
+        merged_headers = b"\r\n".join(headers)
+        return b"\r\n\r\n".join([merged_headers, self._content_encoded])
 
-    return int(found[0])
+    @staticmethod
+    def parse_header(header: bytes) -> dict:
+        parsed = {}
+        for item in header.splitlines():
+            decoded = item.decode("ascii")
+            matches = re.findall(r"(.*): (.*)\s?", decoded)
+            for match in matches:
+                parsed[match[0]] = match[1]
 
+        return parsed
 
-def get_rpc_content(message: bytes) -> str:
-    separated = message.split(RPC_SEPARATOR)
+    @classmethod
+    def from_bytes(cls, data: bytes):
+        header, body = data.split(b"\r\n\r\n")
 
-    if len(separated) != 2:
-        raise ValueError("unable to separate header and body")
+        parsed_header = TransactionMessage.parse_header(header)
+        required_size = int(parsed_header.get("Content-Length"))
+        if len(body) != required_size:
+            raise ValueError(
+                "content corrupted, want=%d, expected=%d" % (required_size, len(body))
+            )
 
-    content_length = get_content_length(separated[0])
-
-    if len(separated[1]) != content_length:
-        raise ValueError(
-            "invalid content length, required : %s, expected : %s"
-            % (content_length, len(separated[1]))
+        return cls(
+            content=body.decode(parsed_header.get("encoding", "utf-8")),
+            headers=parsed_header,
         )
-
-    return separated[1].decode("utf-8")
-
-
-def create_rpc_content(message: str) -> bytes:
-    content_encoded = message.encode("utf-8")
-    content_length = len(content_encoded)
-    header = bytes("Content-Length: %d" % content_length, "ascii")
-
-    return b"".join([header, RPC_SEPARATOR, content_encoded])
 
 
 # fmt: off
@@ -193,19 +209,20 @@ def request(
             conn.connect((host, port))
 
             logger.debug(message)
-            conn.sendall(create_rpc_content(message))
+            conn.sendall(TransactionMessage(message).to_bytes())
 
-            downloaded = []
+            downloaded = io.BytesIO()
             buf_size = 4096
 
             while True:
                 data = conn.recv(buf_size)
-                downloaded.append(data)
+                downloaded.write(data)
 
                 if len(data) < buf_size:
                     break
-            logger.debug(downloaded)
-            return get_rpc_content(b"".join(downloaded))
+
+            logger.debug(downloaded.getvalue())
+            return TransactionMessage.from_bytes(downloaded.getvalue()).content
 
     except socket.timeout as err:
         return ResponseMessage.builder("-1", error=repr(err)).to_rpc()
@@ -230,35 +247,24 @@ def run_server(server_path: str, activate_path: str = None) -> "process":
 
     try:
         if os.name == "nt":
-            # linux subprocess module does not have STARTUPINFO
-            # so only use it if on Windows
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
-            server_proc = subprocess.Popen(
-                run_server_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True,
-                cwd=workdir,
-                # env=env,
-                startupinfo=si,
-            )
+            # if on Windows, hide process window
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
         else:
-            server_proc = subprocess.Popen(
-                run_server_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True,
-                cwd=workdir,
-                # env=env,
-            )
+            startupinfo = None
 
-        if server_proc.poll():
-            _, serr = server_proc.communicate()
-            err_message = "\n".join(serr.decode().splitlines())
+        server_proc = subprocess.Popen(
+            run_server_cmd,
+            shell=True,
+            cwd=workdir,
+            # env=env,
+            startupinfo=startupinfo,
+        )
 
+        time.sleep(3)   # wait server ready
+        err_message = None
+        poll = server_proc.poll()
+        if poll:
             if server_proc.returncode == 123:
                 raise PortInUse(err_message)
 
@@ -320,7 +326,7 @@ def shutdown(*args: "Any") -> "ResponseMessage":
     """
 
     message = RequestMessage.builder(generate_id(), "exit", args)
-    response = request(message.to_rpc(), timeout=0.5)
+    response = request(message.to_rpc(), timeout=15)
     return ResponseMessage.from_rpc(response)
 
 
@@ -335,5 +341,5 @@ def change_workspace(workspace_dir: str) -> "ResponseMessage":
 
     message = RequestMessage.builder(generate_id(), "document.changeWorkspace")
     message.params = {"uri": workspace_dir}
-    response = request(message.to_rpc(), timeout=0.5)
+    response = request(message.to_rpc(), timeout=15)
     return ResponseMessage.from_rpc(response)

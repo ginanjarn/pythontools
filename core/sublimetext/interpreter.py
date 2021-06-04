@@ -1,21 +1,12 @@
 """Settings handler"""
 
 
-import sublime  # pylint: disable=import-error
 import os
 import re
 
 
-def save_settings(key: str, value: "Any") -> None:
-    """save settings to SublimeText settings file"""
-
-    settings = sublime.load_settings("Pytools.sublime-settings")
-    settings.set(key, value)
-    sublime.save_settings("Pytools.sublime-settings")
-
-
-PYTHON_BIN = "python.exe" if os.name == "nt" else os.path.join("bin", "python")
 PATH_BIN = "Scripts" if os.name == "nt" else "bin"
+PYTHON_BIN = "python.exe" if os.name == "nt" else os.path.join(PATH_BIN, "python")
 ACTIVATE_BIN = os.path.join(PATH_BIN, "activate")
 
 
@@ -96,40 +87,3 @@ def find_environment(python_path: str) -> str:
 
     # else
     raise FileNotFoundError("unable find `python` file")
-
-
-def set_interpreter(window: "sublime.Window") -> None:
-    """set python interpreter"""
-
-    sys_python = find_python()
-    conda = find_conda()
-    python_path = list(sys_python) + list(conda)
-    python_binary = [os.path.join(path, PYTHON_BIN) for path in python_path]
-
-    def input_path():
-        def save_input_settings(path):
-            if ispython_path(path):
-                save_settings("interpreter", path)
-
-        window.show_input_panel(
-            caption="python path",
-            initial_text="",
-            on_done=save_input_settings,
-            on_change=None,
-            on_cancel=None,
-        )
-
-    def select_interpreter(index):
-        if index < 0:
-            return  # cancel if index == -1
-
-        if index < len(python_path):
-            save_settings("interpreter", python_binary[index])
-        else:
-            input_path()
-
-    window.show_quick_panel(
-        items=python_binary + ["input path"],
-        on_select=select_interpreter,
-        flags=sublime.KEEP_OPEN_ON_FOCUS_LOST | sublime.MONOSPACE_FONT,
-    )

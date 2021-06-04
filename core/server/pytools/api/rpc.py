@@ -1,7 +1,9 @@
 """rpc message interface"""
 
 
-from typing import Dict, Any
+from enum import Enum
+from typing import Dict, Any, Optional
+from io import StringIO
 import json
 
 # fmt: off
@@ -12,6 +14,20 @@ METHOD      = "method"
 PARAMS      = "params"
 RESULTS     = "results"
 ERROR       = "error"
+
+# ERROR
+CODE        = "code"
+MESSAGE     = "message"
+DATA        = "data"
+
+# ERROR CODE
+class ErrorCode(Enum):
+    INTERNAL_ERROR          = 90000
+    TRANSACTION_ERROR       = 90001
+    PARSE_MESSAGE_ERROR     = 90002
+    INPUT_ERROR             = 90003
+    METHOD_NOT_FOUND_ERROR  = 90004
+    INVALID_PARAMS_ERROR    = 90005
 
 # fmt: on
 
@@ -86,6 +102,31 @@ class ResponseMessage(dict):
         return json.dumps(self)
 
 
+class ResponseError(dict):
+    @property
+    def code(self):
+        return self[CODE]
+
+    @property
+    def message(self):
+        return self[MESSAGE]
+
+    @property
+    def data(self):
+        return self[DATA]
+
+    @classmethod
+    def builder(cls, code: ErrorCode, message: str, data: Optional[Any]=None):
+        return cls({CODE: code.value, MESSAGE: message, DATA: data})
+
+    @classmethod
+    def from_rpc(cls, message: str) -> "ResponseMessage":
+        return cls(json.loads(message))
+
+    def to_rpc(self) -> str:
+        return json.dumps(self)
+
+
 Params = Dict[str, Any]
 
 
@@ -97,7 +138,7 @@ class DocumentURI(str):
         return cls(params["uri"])
 
 
-class Location(dict):
+class Position(dict):
     """cursor position at (line, column)"""
 
     @classmethod
@@ -116,7 +157,7 @@ class Location(dict):
         return self["character"]
 
     @classmethod
-    def from_rpc(cls, params: Params) -> "Location":
+    def from_rpc(cls, params: Params) -> "Position":
         return cls(params)
 
 
@@ -124,10 +165,10 @@ class TextDocumentPositionParams(dict):
     """cursor position at text document"""
 
     @classmethod
-    def builder(cls, uri: DocumentURI, location: Location):
+    def builder(cls, uri: DocumentURI, position: Position):
         holder = {}
         holder["uri"] = uri
-        holder["location"] = location
+        holder["location"] = position
         return cls(holder)
 
     @property
@@ -135,8 +176,8 @@ class TextDocumentPositionParams(dict):
         return self["uri"]
 
     @property
-    def location(self) -> Location:
-        return Location.from_rpc(self["location"])
+    def position(self) -> Position:
+        return Position.from_rpc(self["location"])
 
     @classmethod
     def from_rpc(cls, params: Params) -> "TextDocumentPositionParams":
@@ -231,10 +272,10 @@ CHARACTER = "character"
 NEW_TEXT = "newText"
 
 
-class Range(dict):
+class Location(dict):
     """apply range
 
-    >>> rg = rpc.Range.builder(rpc.Location.builder(0,0),rpc.Location.builder(10,0))
+    >>> rg = rpc.Location.builder(rpc.Position.builder(0,0),rpc.Position.builder(10,0))
     >>> rg
     {'start': {'line': 0, 'character': 0}, 'end': {'line': 10, 'character': 0}}
     >>>
@@ -242,7 +283,7 @@ class Range(dict):
     """
 
     @classmethod
-    def builder(cls, start: Location, end: Location):
+    def builder(cls, start: Position, end: Position):
         return cls({START: start, END: end})
 
     @property
@@ -278,18 +319,18 @@ class TextEdit(dict):
 
     @classmethod
     def builder(cls, start_line, start_character, end_line, end_character, new_text=""):
-        range_ = Range.builder(
-            Location.builder(start_line, start_character),
-            Location.builder(end_line, end_character),
+        range_ = Location.builder(
+            Position.builder(start_line, start_character),
+            Position.builder(end_line, end_character),
         )
         return cls({RANGE: range_, NEW_TEXT: new_text})
 
     @classmethod
     def from_rpc(cls, params):
-        start = Location.from_rpc(params[START])
-        end = Location.from_rpc(params[END])
+        start = Position.from_rpc(params[START])
+        end = Position.from_rpc(params[END])
         new_text = params[NEW_TEXT]
-        range_ = Range.builder(start, end)
+        range_ = Location.builder(start, end)
         return cls({RANGE: range_, NEW_TEXT: new_text})
 
     @property
@@ -301,11 +342,11 @@ class TextEdit(dict):
         self[NEW_TEXT] = value
 
     @property
-    def start(self) -> Location:
+    def start(self) -> Position:
         return self[START]
 
     @property
-    def end(self) -> Location:
+    def end(self) -> Position:
         return self[END]
 
     @property
@@ -313,11 +354,17 @@ class TextEdit(dict):
         return self[TextEdit.HOLDER_KEY]
 
     def accumulate_new_text(self, new_text):
-        if not self.get(TextEdit.HOLDER_KEY):
-            self[TextEdit.HOLDER_KEY] = [new_text]
+        if TextEdit.HOLDER_KEY in self:
+            self[TextEdit.HOLDER_KEY].write(f"\n{new_text}")
         else:
-            self[TextEdit.HOLDER_KEY].append(new_text)
+            text = StringIO()
+            text.write(new_text)
+            self[TextEdit.HOLDER_KEY] = text
 
     def build_new_text(self):
-        self[NEW_TEXT] = "\n".join(self[TextEdit.HOLDER_KEY])
+        if TextEdit.HOLDER_KEY not in self:
+            raise ValueError("nothing builded")
+
+        self[NEW_TEXT] = self[TextEdit.HOLDER_KEY].getvalue()
+        self[TextEdit.HOLDER_KEY].close()
         del self[TextEdit.HOLDER_KEY]
