@@ -902,8 +902,9 @@ class Event(sublime_plugin.ViewEventListener):
             set_active_project()
             self.clear_cached_diagnostic()
 
-            if logger.level > logging.INFO:
+            if logger.level == logging.NOTSET or logger.level > logging.INFO:
                 self.view.run_command("pytools_show_diagnostic_panel")
+
         else:
             PLUGIN_ENABLED = False
 
