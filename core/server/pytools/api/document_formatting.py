@@ -6,22 +6,20 @@ import difflib
 import logging
 import re
 
-from api import rpc
+from api import rpc, errors
 
 
-logger = logging.getLogger("formatting")
+logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
-sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+template = "%(asctime)s - %(levelname)s::%(module)s: %(lineno)d\t%(message)s"
+sh.setFormatter(logging.Formatter(template))
 sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
 try:
     import black
-
-    class FormattingChanges(str):
-        """source changes"""
 
     def get_removed(line: str) -> Tuple[int, int]:
         """get diff removed line
@@ -97,11 +95,9 @@ try:
 
             logger.info("build_diff")
             for line in difflib.unified_diff(self.old_sources, self.new_sources):
-                if line.startswith("@@"):
-                    start_line, end_line = get_removed(line)
-                    self.new_block(start_line, end_line)
 
-                elif any(
+                # ignore this marked line
+                if any(
                     [
                         line.startswith("-"),
                         line.startswith("---"),
@@ -110,9 +106,16 @@ try:
                 ):
                     continue  # pass on removed line
 
+                # create new change group
+                if line.startswith("@@"):
+                    start_line, end_line = get_removed(line)
+                    self.new_block(start_line, end_line)
+
+                # insert updated line
                 elif line.startswith("+"):
                     self.add_to_block(line[1:])  # for added line
 
+                # insert unchanges line
                 else:
                     self.add_to_block(line[1:])  # for unmarked line
 
@@ -128,7 +131,7 @@ try:
     def to_rpc(results: str, *, source: str) -> Dict[str, Any]:
         return Updates(old=source, new=results).build_rpc()
 
-    def format_with_black(source: str) -> FormattingChanges:
+    def format_with_black(source: str) -> str:
         mode = black.FileMode(
             target_versions=set(),
             is_pyi=False,
@@ -139,14 +142,18 @@ try:
             formatted = black.format_file_contents(source, fast=False, mode=mode)
         except black.NothingChanged:
             return source
-        return FormattingChanges(formatted)
+        return formatted
 
-    def format_document(source: str) -> FormattingChanges:
-        """format document"""
+    class DocumentFormatting:
+        def __init__(self, source: str):
+            self.source = source
+            try:
+                self.candidates = format_with_black(source)
+            except black.InvalidInput as err:
+                raise errors.InvalidInput(str(err)) from None
 
-        doc_changes = format_with_black(source)
-        logger.debug(doc_changes)
-        return FormattingChanges(doc_changes)
+        def to_rpc(self):
+            return to_rpc(self.candidates, source=self.source)
 
 
 except ImportError:

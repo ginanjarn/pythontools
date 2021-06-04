@@ -4,7 +4,11 @@
 	{ "caption": "PyTools: Format document", "command": "pytools_format" },
 	{ "caption": "PyTools: Rename", "command": "pytools_rename" },
 	{ "caption": "PyTools: Lint document", "command": "pytools_diagnostic" },
+	{ "caption": "PyTools: Lint document(PyFlakes)", "command": "pytools_diagnostic", "args":{"quick":true} },
 	{ "caption": "PyTools: Clean lint message", "command": "pytools_clear_diagnostic" },
+
+	{ "caption": "PyTools: Open Terminal", "command": "pytools_open_terminal" },
+	{ "caption": "PyTools: Open Terminal Here", "command": "pytools_open_terminal_here" },
 
 	{ "caption": "PyTools: Run server", "command": "pytools_runserver" },
 	{ "caption": "PyTools: Shutdown server", "command": "pytools_shutdownserver" },

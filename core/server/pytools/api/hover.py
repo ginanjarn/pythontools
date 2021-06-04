@@ -5,13 +5,14 @@ from typing import List, Dict, Any, Optional
 from html import escape
 import logging
 
-from api import rpc
+from api import rpc, errors
 
 
-logger = logging.getLogger("formatting")
+logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
-sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+template = "%(asctime)s - %(levelname)s::%(module)s: %(lineno)d\t%(message)s"
+sh.setFormatter(logging.Formatter(template))
 sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
@@ -22,15 +23,12 @@ try:
 
     preload_module(["numpy", "tensorflow", "wx"])
 
-    class Documentations(list):
-        """documentation list"""
-
     def escape_space(doc: str) -> str:
         """replace 'double space' -> '&nbsp;'"""
         return doc.replace("  ", "&nbsp;&nbsp;")
 
     def escape_newline(doc: str) -> str:
-        """replace '\\n' -> '<br>'"""
+        r"""replace '\n' -> '<br>'"""
         return doc.replace("\n", "<br>")
 
     def document_body(docs: Optional[str]) -> str:
@@ -48,18 +46,23 @@ try:
     def build_rpc(help_: BaseName) -> Optional[Dict[str, Any]]:
         """build rpc content"""
 
-        header_template = '<code><a href="">{module}.{name}</a> (<em>{type_}</em>)</code>'.format(
-            module=help_.module_name, name=help_.name, type_=help_.type
-        )
+        module_name = "" if help_.module_name == "__main__" else f"{help_.module_name}."
+        header = f"<a href='#' style='text-decoration:none'>{module_name}{help_.name} <i>({help_.type})</i></a>"
+
+        try:
+            docstring = help_.docstring()
+        except ValueError as err:
+            logger.debug(err)
+            docstring = ""
 
         return (
             None
             if help_.is_keyword
             else rpc.Documentation.builder(
-                html_result=render_html(header_template, help_.docstring()),
+                html_result=render_html(header, docstring),
                 link=rpc.DocumentLink.builder(
                     uri=str(help_.module_path) if help_.module_path else None,
-                    location=rpc.Location.builder(
+                    position=rpc.Position.builder(
                         line=help_.line, character=help_.column
                     ),
                 ),
@@ -71,18 +74,18 @@ try:
 
         return build_rpc(helps[0]) if helps else None
 
-    def get_documentation(
-        source: str, *, line: int, column: int, project: Project = None
-    ) -> Documentations:
-        """complete script at following pos(line, column)
+    class Documentation:
+        def __init__(
+            self, source: str, *, line: int, column: int, project: Project = None
+        ):
+            script = Script(source, project=project)
+            try:
+                self.candidates = script.help(line, column)
+            except ValueError as err:
+                raise errors.InvalidInput(str(err)) from err
 
-        Raises:
-            ValueError: column > len(line_content)
-        """
-
-        script = Script(code=source, project=project)
-        results = script.help(line=line, column=column)
-        return Documentations(results)
+        def to_rpc(self):
+            return to_rpc(self.candidates)
 
 
 except ImportError:

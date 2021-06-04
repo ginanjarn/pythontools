@@ -6,27 +6,22 @@ import os
 import re
 import subprocess
 import logging
-from typing import List
+from typing import List, Dict, Any
+
+from api import errors
 
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
-sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+template = "%(asctime)s - %(levelname)s::%(module)s: %(lineno)d\t%(message)s"
+sh.setFormatter(logging.Formatter(template))
 sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
-class PylintMessage(str):
-    """Pylint message"""
-
-
-class PyflakesMessage(str):
-    """Pyflakes message"""
-
-
 def pylint(path: str, *, enable: List[str] = None, disable: List[str] = None) -> str:
-    """pylint"""
+    """lint with pylint"""
 
     pylint_cmd = [
         "pylint",
@@ -44,28 +39,21 @@ def pylint(path: str, *, enable: List[str] = None, disable: List[str] = None) ->
 
     try:
         if os.name == "nt":
-            # linux subprocess module does not have STARTUPINFO
-            # so only use it if on Windows
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
-            server_proc = subprocess.Popen(
-                pylint_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True,
-                env=env,
-                startupinfo=si,
-            )
+            # STARTUPINFO only available on windows
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
         else:
-            server_proc = subprocess.Popen(
-                pylint_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True,
-                env=env,
-            )
+            startupinfo = None
+
+        server_proc = subprocess.Popen(
+            pylint_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True,
+            env=env,
+            startupinfo=startupinfo,
+        )
 
     except FileNotFoundError:
         raise ModuleNotFoundError("pylint") from None
@@ -74,10 +62,10 @@ def pylint(path: str, *, enable: List[str] = None, disable: List[str] = None) ->
     if serr:
         raise Exception("\n".join(serr.decode().splitlines()))
 
-    return PylintMessage(sout.decode())
+    return sout.decode()
 
 
-def pyflakes(path):
+def pyflakes(path: str):
     """lint with pyflakes"""
 
     pyflakes_cmd = ["pyflakes", path]
@@ -85,37 +73,30 @@ def pyflakes(path):
 
     try:
         if os.name == "nt":
-            # linux subprocess module does not have STARTUPINFO
-            # so only use it if on Windows
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
-            server_proc = subprocess.Popen(
-                pyflakes_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True,
-                env=env,
-                startupinfo=si,
-            )
+            # STARTUPINFO only available on windows
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW
         else:
-            server_proc = subprocess.Popen(
-                pyflakes_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True,
-                env=env,
-            )
+            startupinfo = None
+
+        server_proc = subprocess.Popen(
+            pyflakes_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True,
+            env=env,
+            startupinfo=startupinfo,
+        )
 
     except FileNotFoundError:
         raise ModuleNotFoundError("pyflakes") from None
 
     sout, serr = server_proc.communicate()
     if serr:
-        raise Exception("\n".join(serr.decode().splitlines()))
+        raise errors.InvalidInput("\n".join(serr.decode().splitlines()))
 
-    return PyflakesMessage(sout.decode())
+    return sout.decode()
 
 
 # fmt: off
@@ -135,7 +116,7 @@ def transform_severity(severity):
     return code[severity]
 
 
-def pylint_to_rpc(message):
+def pylint_to_rpc(message: str):
     pattern = r"(\w):(\w*): (.*):(\d*):(\d*): (.*)"
 
     for line in message.splitlines():
@@ -158,7 +139,7 @@ def pylint_to_rpc(message):
         }
 
 
-def pyflakes_to_rpc(message):
+def pyflakes_to_rpc(message: str):
     pattern = r"(.*):(\d*):(\d*)\s(.*)"
 
     for line in message.splitlines():
@@ -179,21 +160,17 @@ def pyflakes_to_rpc(message):
         }
 
 
-def to_rpc(message: str) -> "Dict[str, Any]":
-    """convert message to rpc"""
+class PyLint:
+    def __init__(self, path: str):
+        self.message = pylint(path)
 
-    return (
-        list(pylint_to_rpc(message))
-        if isinstance(message, PylintMessage)
-        else list(pyflakes_to_rpc(message))
-    )
+    def to_rpc(self) -> Dict[str, Any]:
+        return list(pylint_to_rpc(self.message))
 
 
-def lint(path: str, *, engine="pylint"):
-    """lint module"""
+class PyFlakes:
+    def __init__(self, path: str):
+        self.message = pyflakes(path)
 
-    # lint engine map
-    lint_func = {"pylint": pylint, "pyflakes": pyflakes}
-    results = lint_func[engine](path)
-
-    return results
+    def to_rpc(self) -> Dict[str, Any]:
+        return list(pyflakes_to_rpc(self.message))

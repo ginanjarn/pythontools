@@ -1,6 +1,7 @@
 """main server"""
 
 import argparse
+import io
 import json
 import logging
 import os
@@ -8,102 +9,75 @@ import socketserver
 import socket
 import sys
 import signal
+import re
 
 from importlib.util import find_spec
-from re import findall
-from typing import Dict, List, Any, Optional, Tuple, Text
+from typing import Any, Tuple
 
-from api import rpc
+from api import rpc, errors
 from api import completion, hover, document_formatting, rename, analyzer
 
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
-sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+template = "%(asctime)s - %(levelname)s::%(module)s: %(lineno)d\t%(message)s"
+sh.setFormatter(logging.Formatter(template))
 sh.setLevel(logging.DEBUG)
 fh = logging.FileHandler("server.log")
-fh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+fh.setFormatter(logging.Formatter(template))
 fh.setLevel(logging.ERROR)
 logger.addHandler(sh)
 logger.addHandler(fh)
 
 
-RPC_SEPARATOR = b"\r\n\r\n"
+class TransactionMessage:
+    def __init__(self, content, encoding="utf-8", headers=None):
+        self._content_encoded = content.encode(encoding)
+        self.encoding = encoding
+        self._headers = {
+            "Content-Length": len(self._content_encoded),
+            "encoding": self.encoding,
+        }
 
+    @property
+    def content(self):
+        return self._content_encoded.decode(self.encoding)
 
-def get_content_length(header: bytes) -> int:
-    """get content length
+    def to_bytes(self):
+        headers = []
+        for key, value in self._headers.items():
+            headers.append(f"{key}: {value}".encode(self.encoding))
 
-    Raises:
-        ValueError if Content-Length not found in header
-    """
+        merged_headers = b"\r\n".join(headers)
+        return b"\r\n\r\n".join([merged_headers, self._content_encoded])
 
-    found = findall(r"Content-Length: (\d*)\s?", header.decode("ascii"))
-    if not any(found):
-        raise ValueError("unable to get Content-Length in header")
+    @staticmethod
+    def parse_header(header: bytes) -> dict:
+        parsed = {}
+        for item in header.splitlines():
+            decoded = item.decode("ascii")
+            matches = re.findall(r"(.*): (.*)\s?", decoded)
+            for match in matches:
+                parsed[match[0]] = match[1]
 
-    return int(found[0])
+        return parsed
 
+    @classmethod
+    def from_bytes(cls, data: bytes):
+        header, body = data.split(b"\r\n\r\n")
 
-def get_rpc_content(message: bytes) -> str:
-    """get content from rpc message"""
+        parsed_header = TransactionMessage.parse_header(header)
+        required_size = int(parsed_header.get("Content-Length"))
+        if len(body) != required_size:
+            raise ValueError(
+                "content corrupted, want=%d, expected=%d" % (required_size, len(body))
+            )
 
-    separated = message.split(RPC_SEPARATOR)
-
-    if len(separated) != 2:
-        raise ValueError("unable to separate header and body")
-
-    content_length = get_content_length(separated[0])
-
-    if len(separated[1]) != content_length:
-        raise ValueError(
-            "invalid content length, required : %s, expected : %s"
-            % (content_length, len(separated[1]))
+        return cls(
+            content=body.decode(parsed_header.get("encoding", "utf-8")),
+            headers=parsed_header,
         )
-
-    return separated[1].decode("utf-8")
-
-
-def create_rpc_content(message: str) -> bytes:
-    """build rpc message"""
-
-    content_encoded = message.encode("utf-8")
-    content_length = len(content_encoded)
-    header = bytes("Content-Length: %d" % content_length, "ascii")
-
-    return b"".join([header, RPC_SEPARATOR, content_encoded])
-
-
-# Error classes ++++++++++++++++++++++++++++++++++++++++
-class InvalidRPCMessage(ValueError):
-    """Invalid RPC Message"""
-
-    def __init__(self, err):
-        super().__init__("Invalid RPC Message : %s" % repr(err))
-
-
-class MethodNotFound(KeyError):
-    """Method not found error"""
-
-    def __init__(self, err):
-        super().__init__("method not found : %s" % str(err))
-
-
-class InvalidParams(Exception):
-    """required params not found"""
-
-    def __init__(self, err):
-        if isinstance(err, KeyError):
-            # key not found
-            super().__init__("params not found : %s" % str(err))
-        else:
-            # parsing error
-            super().__init__(str(err))
-
-
-class InternalError(Exception):
-    """internal error occured"""
 
 
 # fmt: off
@@ -200,70 +174,42 @@ class ServerHandler(socketserver.BaseRequestHandler):
             results = {"workspace_directory": WORKSPACE_DIRECTORY}
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
         else:
             return results
-
-    # def text_change(self, params: rpc.Params):
-    #     """text change only accept full document changes"""
-
-    #     global BUFFER
-
-    #     try:
-    #         BUFFER = params["newText"]
-    #     except (ValueError, TypeError) as err:
-    #         raise InvalidParams(err)
-    #     else:
-    #         return None
 
     # features function +++++++++++++++++++++++++++++++++++++++++
     def complete(self, params: rpc.Params) -> Any:
         try:
             tparams = rpc.TextDocumentPositionParams.from_rpc(params)
             path = tparams.uri
-            line = tparams.location.line + 1  # jedi use 1 based index
-            column = tparams.location.character
+            line = tparams.position.line + 1  # jedi use 1 based index
+            column = tparams.position.character
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            project = (
-                completion.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
-            )
-            completions_candidate = completion.complete(
-                path, line=line, column=column, project=project
-            )
-            results = completion.to_rpc(completions_candidate)
+        project = (
+            completion.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
+        )
 
-        except Exception as err:
-            raise InternalError(err) from err
-        else:
-            return results
+        cmpl = completion.Completion(path, line=line, column=column, project=project)
+        return cmpl.to_rpc()
 
     def hover(self, params: rpc.Params) -> Any:
         try:
             tparams = rpc.TextDocumentPositionParams.from_rpc(params)
             path = tparams.uri
-            line = tparams.location.line + 1  # jedi use 1 based index
-            column = tparams.location.character
+            line = tparams.position.line + 1  # jedi use 1 based index
+            column = tparams.position.character
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            project = (
-                hover.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
-            )
-            documentation_candidate = hover.get_documentation(
-                path, line=line, column=column, project=project
-            )
-            results = hover.to_rpc(documentation_candidate)
+        project = hover.Project(WORKSPACE_DIRECTORY) if WORKSPACE_DIRECTORY else None
 
-        except Exception as err:
-            raise InternalError(err) from err
-        else:
-            return results
+        doc = hover.Documentation(path, line=line, column=column, project=project)
+        return doc.to_rpc()
 
     def formatting(self, params: rpc.Params) -> Any:
         try:
@@ -271,15 +217,10 @@ class ServerHandler(socketserver.BaseRequestHandler):
             src = uri
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            format_result = document_formatting.format_document(src)
-            results = document_formatting.to_rpc(format_result, source=src)
-        except Exception as err:
-            raise InternalError(err) from err
-        else:
-            return results
+        formatted = document_formatting.DocumentFormatting(src)
+        return formatted.to_rpc()
 
     def rename(self, params: rpc.Params) -> Any:
         try:
@@ -294,44 +235,28 @@ class ServerHandler(socketserver.BaseRequestHandler):
             new_name = params["new_name"]
 
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            changes = rename.rename_attribute(project, resource, offset, new_name)
-            results = rename.to_rpc(changes)
-
-        except Exception as err:
-            raise InternalError(err) from err
-        else:
-            return results
+        changes = rename.Rename(project, resource, offset, new_name)
+        return changes.to_rpc()
 
     def get_diagnostic(self, params: rpc.Params) -> Any:
         try:
             uri = rpc.DocumentURI.from_rpc(params)
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            diagnostic = analyzer.lint(path=uri)
-            results = analyzer.to_rpc(diagnostic)
-        except Exception as err:
-            raise InternalError(err)
-        else:
-            return results
+        lint = analyzer.PyLint(uri)
+        return lint.to_rpc()
 
     def validate_source(self, params: rpc.Params) -> Any:
         try:
             uri = rpc.DocumentURI.from_rpc(params)
         except (ValueError, KeyError) as err:
-            raise InvalidParams(err) from err
+            raise errors.InvalidParams(err) from None
 
-        try:
-            diagnostic = analyzer.lint(path=uri, engine="pyflakes")
-            results = analyzer.to_rpc(diagnostic)
-        except Exception as err:
-            raise InternalError(err)
-        else:
-            return results
+        lint = analyzer.PyFlakes(uri)
+        return lint.to_rpc()
 
     # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -339,7 +264,7 @@ class ServerHandler(socketserver.BaseRequestHandler):
         try:
             command = self.commands[method]
         except KeyError as err:
-            raise MethodNotFound(err) from err
+            raise errors.MethodNotFound(err) from err
         else:
             return command(params)
 
@@ -351,16 +276,19 @@ class ServerHandler(socketserver.BaseRequestHandler):
         try:
             # parsing requestcontent
             try:
-                req_message = rpc.RequestMessage.from_rpc(get_rpc_content(message))
+                req_message = rpc.RequestMessage.from_rpc(
+                    TransactionMessage.from_bytes(message).content
+                )
+
             except json.JSONDecodeError as err:
-                raise InvalidRPCMessage(err) from err
+                raise errors.InvalidRPCMessage(err) from err
 
             resp_message.id_ = req_message.id_
 
         except Exception as err:
             logger.debug("loading message error", exc_info=True)
             resp_message.error = repr(err)
-            return create_rpc_content(resp_message.to_rpc())
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
 
         try:
             # processing
@@ -369,65 +297,86 @@ class ServerHandler(socketserver.BaseRequestHandler):
             resp_message.id_ = req_message.id_
             resp_message.results = results
 
+        except errors.MethodNotFound as err:
+            logger.debug("invalid method error : %s", err)
+            resp_message.error = rpc.ResponseError.builder(
+                rpc.ErrorCode.METHOD_NOT_FOUND_ERROR, message=str(err)
+            )
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+
+        except errors.InvalidParams as err:
+            logger.debug("invalid params error : %s", err)
+            resp_message.error = rpc.ResponseError.builder(
+                rpc.ErrorCode.INVALID_PARAMS_ERROR, message=str(err)
+            )
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+
+        except errors.InvalidInput as err:
+            logger.debug("invalid input error : %s", err)
+            resp_message.error = rpc.ResponseError.builder(
+                rpc.ErrorCode.INPUT_ERROR, message=str(err)
+            )
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+
         except Exception as err:
             logger.exception("process exception : %s", err)
-            resp_message.error = repr(err)
-            return create_rpc_content(resp_message.to_rpc())
+            resp_message.error = rpc.ResponseError.builder(
+                rpc.ErrorCode.INTERNAL_ERROR, message=repr(err)
+            )
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
 
         else:
             logger.debug(resp_message)
-            return create_rpc_content(resp_message.to_rpc())
+            return TransactionMessage(resp_message.to_rpc()).to_bytes()
 
     def handle(self) -> None:
         """server handle"""
 
         print(" request from :", self.client_address)
 
-        received = []
+        downloaded = io.BytesIO()
 
         try:
             while True:
                 chunk = self.request.recv(BUFF_SIZE)
-                received.append(chunk)
+                downloaded.write(chunk)
                 if len(chunk) < BUFF_SIZE:
                     break
 
-            request_message = b"".join(received)
+            request_message = downloaded.getvalue()
             logger.debug("request_message : %s", request_message)
             results = self.handle_request(request_message)
             logger.debug("results : %s", results)
             self.request.sendall(results)
 
-            if TERMINATE:
-                os.kill(os.getpid(), signal.SIGTERM)
-
-        except Exception as err:
+        except Exception:
             logger.exception("handling socket exception", exc_info=True)
+
+        finally:
+            downloaded.close()
+
+    def finish(self):
+        if TERMINATE:
+            os.kill(os.getpid(), signal.SIGTERM)
 
 
 def handle_exit(num, frame) -> None:
     sys.exit(0)
 
 
-ADDRESS = ("127.0.0.1", 8088)
-
-
 def main():
 
+    signal.signal(signal.SIGTERM, handle_exit)
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--port", help="socket port")
+    parser.add_argument("-p", "--port", help="socket port", type=int, default=8088)
     args = parser.parse_args()
 
-    global ADDRESS
-    if args.port:
-        ADDRESS = ("127.0.0.1", int(args.port))
+    address = ("127.0.0.1", args.port)
 
     try:
-        signal.signal(signal.SIGTERM, handle_exit)
-
-        print(f">>> Server running at {ADDRESS}.\n Press [CTRL+C] to stop.\n")
-
-        server = socketserver.TCPServer(ADDRESS, ServerHandler)
+        print(f">>> Server running at {address}.\n Press [CTRL+C] to stop.\n")
+        server = socketserver.TCPServer(address, ServerHandler)
         server.serve_forever()
 
     except KeyboardInterrupt:

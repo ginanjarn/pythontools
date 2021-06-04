@@ -42,13 +42,9 @@
                 "id": "features"
               },
               {
-                "caption": "-",
-                "id": "workspace"
-              },
-              {
-                "caption": "Absolute Import",
-                "command": "pytools_set_absoluteimport",
-                "id": "workspace"
+                "caption": "Show diagnostics panel",
+                "command": "pytools_set_diagnosticpanel",
+                "id": "features"
               },
               {
                 "caption": "-",

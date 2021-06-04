@@ -1,32 +1,36 @@
 """document rename module"""
 
 
-from typing import Text, Tuple, List, Iterator, Any, Union, Dict, Optional
-import os
+from typing import Tuple, List, Iterator, Any, Dict, Optional
+from contextlib import contextmanager
 import re
 import difflib
 import logging
+from api import rpc, errors
 
 
-logger = logging.getLogger("rename")
+logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
-sh.setFormatter(logging.Formatter("%(levelname)s\t%(module)s: %(lineno)d\t%(message)s"))
+template = "%(asctime)s - %(levelname)s::%(module)s: %(lineno)d\t%(message)s"
+sh.setFormatter(logging.Formatter(template))
 sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
 try:
     from rope.base import project, libutils
-    from rope.base.change import ChangeSet, MoveResource, ChangeContents
-    from rope.base.exceptions import RefactoringError
-    from rope.refactor.rename import Rename
-
-    class RenameChanges(ChangeSet):
-        """rename changes object"""
+    import rope.base.change as rope_change
+    import rope.base.exceptions as rope_exception
+    import rope.refactor.rename as rope_rename
 
     def get_removed(line: str) -> Tuple[int, int]:
-        """get diff removed line"""
+        """get diff removed line
+
+        @@ -1,5 +1,10 @@
+        =>  remove from line 1 to next 5 lines
+            insert from line 1 to next 10 lines
+        """
 
         found = re.findall(r"@@ \-(\d*),?(\d*)\s.*@@", line)
         if not any(found):
@@ -38,35 +42,45 @@ try:
         end = start + span
         return start, end
 
-    class TextEdit:
-        """TextEdit object"""
+    class Updates:
+        """Updates object"""
 
         def __init__(self, old: str, new: str) -> None:
+
             self.old_sources = old.split("\n")
             self.new_sources = new.split("\n")
 
             self.blocks = []
             self.block_index = -1
 
-            self.build_diff()
+        def __repr__(self):
+            return "\n".join(
+                list(difflib.unified_diff(self.old_sources, self.new_sources))
+            )
+
+        @staticmethod
+        def to_zero_index(n):
+            """convert one based diff line index to zero
+
+            difflib use one based line index
+            """
+            return n - 1
 
         def new_block(self, start_line: int, end_line: int) -> None:
             """create new change block"""
 
             logger.info("new_block from line %s to %s", start_line, end_line)
             start_character = 0
-            end_character = len(self.old_sources[end_line - 1])
+            end_character = len(self.old_sources[self.to_zero_index(end_line)])
 
             self.block_index += 1
-            self.blocks.append(
-                {
-                    "range": {
-                        "start": {"line": start_line - 1, "character": start_character},
-                        "end": {"line": end_line - 1, "character": end_character},
-                    },
-                    "newText": [],
-                }
+            edit = rpc.TextEdit.builder(
+                start_line=self.to_zero_index(start_line),
+                start_character=start_character,
+                end_line=self.to_zero_index(end_line),
+                end_character=end_character,
             )
+            self.blocks.append(edit)
             logger.debug("new_block : %s", self.blocks[self.block_index])
 
         def add_to_block(self, new_text: str) -> None:
@@ -77,18 +91,16 @@ try:
             if self.block_index < 0:
                 raise ValueError("block_index not initialized")
 
-            self.blocks[self.block_index]["newText"].append(new_text)
+            self.blocks[self.block_index].accumulate_new_text(new_text)
 
         def build_diff(self) -> None:
             """build changes diff"""
 
             logger.info("build_diff")
             for line in difflib.unified_diff(self.old_sources, self.new_sources):
-                if line.startswith("@@"):
-                    start_line, end_line = get_removed(line)
-                    self.new_block(start_line, end_line)
 
-                elif any(
+                # ignore this marked line
+                if any(
                     [
                         line.startswith("-"),
                         line.startswith("---"),
@@ -97,18 +109,26 @@ try:
                 ):
                     continue  # pass on removed line
 
+                # create new change group
+                if line.startswith("@@"):
+                    start_line, end_line = get_removed(line)
+                    self.new_block(start_line, end_line)
+
+                # insert updated line
                 elif line.startswith("+"):
                     self.add_to_block(line[1:])  # for added line
 
+                # insert unchanges line
                 else:
                     self.add_to_block(line[1:])  # for unmarked line
 
             for block in self.blocks:
-                block["newText"] = "\n".join(block["newText"])  # list to string
+                block.build_new_text()
 
-        def to_rpc(self) -> List[Any]:
+        def build_rpc(self) -> List[Any]:
             """convert to rpc"""
 
+            self.build_diff()
             return self.blocks
 
     class DocumentChanges:
@@ -122,11 +142,11 @@ try:
         def to_rpc(self) -> Dict[str, Any]:
             """convert to rpc"""
 
-            changes = TextEdit(old=self.old_source, new=self.new_source).to_rpc()
+            updates = Updates(old=self.old_source, new=self.new_source)
             results = {
                 "type": "change",
                 "file_name": self.file_name,
-                "changes": changes,
+                "changes": updates.build_rpc(),
             }
             logger.debug(results)
             return results
@@ -148,52 +168,73 @@ try:
             logger.debug(results)
             return results
 
-    def rpc_generator(change_set: ChangeSet) -> Iterator[Any]:
+    def rpc_generator(change_set: rope_change.ChangeSet) -> Iterator[Any]:
         """rpc generator"""
 
         for change in change_set.changes:
-            if isinstance(change, MoveResource):
-                change: MoveResource = change
+            if isinstance(change, rope_change.MoveResource):
+                change: rope_change.MoveResource = change
                 yield DocumentRename(
                     old_name=change.resource.real_path,
                     new_name=change.new_resource.real_path,
                 ).to_rpc()
 
-            elif isinstance(change, ChangeContents):
-                change: ChangeContents = change
-                diff_change = change.get_description()
+            elif isinstance(change, rope_change.ChangeContents):
+                change: rope_change.ChangeContents = change
                 file_name = change.resource.real_path
                 old_src = change.resource.read()
                 yield DocumentChanges(
                     file_name, old=old_src, new=change.new_contents
                 ).to_rpc()
 
-    def to_rpc(change_set: ChangeSet) -> List[Any]:
+    def to_rpc(change_set: rope_change.ChangeSet) -> List[Any]:
         """convert to rpc"""
 
         return list(rpc_generator(change_set))
 
+    @contextmanager
+    def rope_project(project_path: str):
+        try:
+            project_manager = project.Project(project_path)
+            yield project_manager
+        finally:
+            project_manager.close()
+
     def rename_attribute(
         project_path: str, resource_path: str, offset: Optional[int], new_name: str
-    ) -> RenameChanges:
+    ) -> Any:
         """
 
         Raises:
             RefactoringError
         """
         try:
-            project_manager = project.Project(project_path)
-            file_resource = libutils.path_to_resource(project_manager, resource_path)
+            with rope_project(project_path) as project_manager:
+                file_resource = libutils.path_to_resource(
+                    project_manager, resource_path
+                )
+                rename_task = rope_rename.Rename(project_manager, file_resource, offset)
+                changes = rename_task.get_changes(new_name)
 
-            rename_task = Rename(project_manager, file_resource, offset)
-            changes = rename_task.get_changes(new_name)
+                return changes
 
-            project_manager.close()
-            # return RenameChanges(changes)
-            return changes
+        except rope_exception.RefactoringError as err:
+            raise errors.InvalidInput(err) from err
 
-        except RefactoringError as err:
-            raise ValueError(err) from err
+    class Rename:
+        def __init__(
+            self,
+            project_path: str,
+            resource_path: str,
+            offset: Optional[int],
+            new_name: str,
+        ):
+            self.candidates = rename_attribute(
+                project_path, resource_path, offset, new_name
+            )
+
+        def to_rpc(self):
+            return to_rpc(self.candidates)
 
 
 except ImportError:

@@ -1,108 +1,81 @@
+
 # PYTHONTOOLS
 
-Lightweight python tools for **SublimeText**.
+Lightweight python tools for **Sublime Text**.
 
----
-
-## FEATURES
+# FEATURES
 
 - **Completion**
-
 - **Documentation**
-
 - **Document formatting**
-
+- **Rename**
 - **Linter** 
 
----
+# SETUP
 
-## SETUP
+## Plugin
 
-### Plugin
+Download [release](https://github.com/ginanjarn/pythontools/archive/master.zip) version from github or clone `https://github.com/ginanjarn/pythontools.git` to **Sublime Text `package directory`**.
 
-Download [release](https://github.com/ginanjarn/pythontools/archive/master.zip) version from github or clone `https://github.com/ginanjarn/pythontools.git` to **SublimeText** `package directory`.
+> `Preferences` -> `Browse Packages`
 
-> On **SublimeText** : `Preferences` `->` `Browse Packages` to open `PACKAGES directory`.
+## Python
 
-### Python
+Install any **python** distribution and **required packages**.
 
-Install any **python** distribution, prefer **anaconda** python distribution with battery-included package.
+## Required packages
 
-Install following required packages:
-
-- **jedi**
-
-- **black**
-
-- **pylint**
+- `jedi`
+- `black`
+- `pylint`
+- `pyflakes`
+- `rope`
 
 > Install command:
-> 
-> * Conda         : `conda instal <package-name>`
-> 
-> * Pip         : `pip install <package-name>`
+> * Conda : `conda instal <package-name>`
+> * Pip : `pip install <package-name>`
 
----
+# USAGE
 
-## USAGE
-
-### Preparation
+## Preparation
 
 1. Setup **`python interpreter`**. Open command palette (`Ctrl+Shift+P`) `->` `Python Interpreter`.
 
 > Interpreter scan in `PATH` and `Anaconda PATH`.
 
-2. Install [required packages](#Python). Bypass if already installed.
+2. Install [required packages](#Required_Packages).
 
-3. Configure **disabled** features (*Optional*).  Open command palette `(Ctrl+Shift+P)` `->` `Feature Config`.
+## Commands
 
-> Default all features **enabled**.
+|No|Command|Function|
+|--|--|--|
+|1|`Pytools: Python Interpreter`|setup interpreter|
+|2|`Pytools: Format document`|format document|
+|3|`Pytools: Rename`|rename selected idetifier|
+|4|`Pytools: Lint document`|lint using pylint|
+|5|`Pytools: Lint(PyFlakes)`|lint using pyflakes|
+|6|`Pytools: Clean lint message`|clean lint message|
+|7|`Pytools: Open Terminal`|open terminal in current project|
+|8|`Pytools: Open Terminal Here`|open terminal in active document directory|
+|9|`Pytools: Run server`|run plugin server|
+|10|`Pytools: Shutdown server`|shutdown plugin server|
 
-### Completion
+> Plugin server will started if hover in python identifier or typing. Server *still running* even Sublime Text closed. You have to shutdown manually.
 
-Completion pop-up while typing.
+## Feature Options
 
-### Documentation
+Feature can be disabled by uncheck menu `Preferences` -> `Package Settings` -> `Python tools`.
 
-Hover above identifier show documentation pop-up.
-
-### Format code
-
-Open command palette (`Ctrl+Shift+P`) `->` `Format document`.
-
-> Notice: check formatting changes before save to prevent future bugs.
-
-### Linting
-
-Open command palette (`Ctrl+Shift+P`) `->` `Lint module`.
-
----
-
-## TROUBLESHOOT
+# TROUBLESHOOT
 
 * This plugin conflict with other python completion plugin. Try to disable or remove the plugin.
-
-* Python interpreter must be setup.
-  
-  Manual setting on `PACKAGES/User/Pytools.sublime-settings`.
-
-* Required `python package` : `jedi`, `black`, `pylint`.
+* Install [required packages](#setup).
 
 ## LICENSE
 
-`Copyright (c) 2021 ginanjarn.
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.`
+Copyright (c) 2021 ginanjarn.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
