@@ -1174,7 +1174,8 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
 
         logger.info("on clear diagnostic")
 
-        view = sublime.active_window().active_view()  # active document view
+        window = sublime.active_window()
+        view = window.active_view()  # active document view
         if not valid_source(view):
             return
 
@@ -1194,7 +1195,7 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
         DIAGNOSTICS = list(dropwhile(removed, DIAGNOSTICS))
 
         # destroy output panel
-        output_panel = document.OutputPanel(self.view.window(), OUTPUT_PANEL_NAME)
+        output_panel = document.OutputPanel(window, OUTPUT_PANEL_NAME)
         output_panel.destroy()
 
     def is_visible(self):
