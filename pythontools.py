@@ -13,7 +13,7 @@ from itertools import dropwhile
 from .core import client
 from .core.sublimetext import document
 from .core.sublimetext import interpreter
-from .core.sublimetext import settings
+from .core.sublimetext import plugin_settings
 
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ ALL_ENABLED = False
 def feature_enabled(feature_name: str, *, default=True) -> bool:
     """check if feature enabled on settings"""
 
-    with load_settings(settings.SETTINGS_BASENAME) as sublime_settings:
+    with load_settings(plugin_settings.SETTINGS_BASENAME) as sublime_settings:
         return sublime_settings.get(feature_name, default) and ALL_ENABLED
 
 
@@ -168,20 +168,20 @@ def set_capability(capability):
     global SERVER_CAPABILITY
 
     # apply capability
-    SERVER_CAPABILITY[settings.F_AUTOCOMPLETE] = capability.get(
+    SERVER_CAPABILITY[plugin_settings.F_AUTOCOMPLETE] = capability.get(
         COMPLETION_CAPABILITY, False
     )
-    SERVER_CAPABILITY[settings.F_DOCUMENTATION] = capability.get(
+    SERVER_CAPABILITY[plugin_settings.F_DOCUMENTATION] = capability.get(
         HOVER_CAPABILITY, False
     )
-    SERVER_CAPABILITY[settings.F_DOCUMENT_FORMATTING] = capability.get(
+    SERVER_CAPABILITY[plugin_settings.F_DOCUMENT_FORMATTING] = capability.get(
         HOVER_CAPABILITY, False
     )
-    SERVER_CAPABILITY[settings.F_DIAGNOSTIC] = capability.get(
+    SERVER_CAPABILITY[plugin_settings.F_DIAGNOSTIC] = capability.get(
         DIAGNOSTIC_CAPABILITY, False
     )
-    SERVER_CAPABILITY[settings.F_VALIDATE] = capability.get(VALIDATE_CAPABILITY, False)
-    SERVER_CAPABILITY[settings.F_RENAME] = capability.get(RENAME_CAPABILITY, False)
+    SERVER_CAPABILITY[plugin_settings.F_VALIDATE] = capability.get(VALIDATE_CAPABILITY, False)
+    SERVER_CAPABILITY[plugin_settings.F_RENAME] = capability.get(RENAME_CAPABILITY, False)
     logger.debug(SERVER_CAPABILITY)
 
 
@@ -286,7 +286,7 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
 
         selected_index = -1
 
-        with load_settings(settings.SETTINGS_BASENAME) as sublime_settings:
+        with load_settings(plugin_settings.SETTINGS_BASENAME) as sublime_settings:
             active_interpreter = sublime_settings.get(INTERPRETER_SETTING_KEY)
             try:
                 selected_index = python_binaries.index(active_interpreter)
@@ -305,7 +305,7 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
             sublime.error_message("Invalid python path:\n%s" % path)
             return
 
-        with load_settings(settings.SETTINGS_BASENAME, save=True) as sublime_settings:
+        with load_settings(plugin_settings.SETTINGS_BASENAME, save=True) as sublime_settings:
             sublime_settings.set(INTERPRETER_SETTING_KEY, path)
 
 
@@ -319,7 +319,7 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             logger.debug("server error")
             return  # cancel if server error
 
-        with load_settings(settings.SETTINGS_BASENAME) as sublime_settings:
+        with load_settings(plugin_settings.SETTINGS_BASENAME) as sublime_settings:
             python_path = sublime_settings.get(INTERPRETER_SETTING_KEY)
 
             if not python_path:
@@ -678,14 +678,14 @@ class Event(sublime_plugin.ViewEventListener):
                 RequirementInvalid
             """
 
-            if not feature_enabled(settings.F_AUTOCOMPLETE):
+            if not feature_enabled(plugin_settings.F_AUTOCOMPLETE):
                 raise RequirementInvalid(
-                    "feature disabled: %s" % repr(settings.F_AUTOCOMPLETE)
+                    "feature disabled: %s" % repr(plugin_settings.F_AUTOCOMPLETE)
                 )
 
-            if not server_capable(settings.F_AUTOCOMPLETE):
+            if not server_capable(plugin_settings.F_AUTOCOMPLETE):
                 raise RequirementInvalid(
-                    "server incapable: %s" % repr(settings.F_AUTOCOMPLETE)
+                    "server incapable: %s" % repr(plugin_settings.F_AUTOCOMPLETE)
                 )
 
             if not valid_attribute(view, locations[0]):
@@ -823,14 +823,14 @@ class Event(sublime_plugin.ViewEventListener):
 
         def check_docstring_requirements():
 
-            if not feature_enabled(settings.F_DOCUMENTATION):
+            if not feature_enabled(plugin_settings.F_DOCUMENTATION):
                 raise RequirementInvalid(
-                    "feature disabled: %s" % repr(settings.F_DOCUMENTATION)
+                    "feature disabled: %s" % repr(plugin_settings.F_DOCUMENTATION)
                 )
 
-            if not server_capable(settings.F_DOCUMENTATION):
+            if not server_capable(plugin_settings.F_DOCUMENTATION):
                 raise RequirementInvalid(
-                    "server incapable: %s" % repr(settings.F_DOCUMENTATION)
+                    "server incapable: %s" % repr(plugin_settings.F_DOCUMENTATION)
                 )
 
             if not valid_attribute(view, point):
@@ -863,8 +863,8 @@ class Event(sublime_plugin.ViewEventListener):
 
             if not any(
                 [
-                    feature_enabled(settings.F_DIAGNOSTIC),
-                    feature_enabled(settings.F_VALIDATE),
+                    feature_enabled(plugin_settings.F_DIAGNOSTIC),
+                    feature_enabled(plugin_settings.F_VALIDATE),
                 ]
             ):
                 raise RequirementInvalid("feature disabled")
@@ -973,14 +973,14 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
 
         def check_requirements():
 
-            if not feature_enabled(settings.F_DOCUMENT_FORMATTING):
+            if not feature_enabled(plugin_settings.F_DOCUMENT_FORMATTING):
                 raise RequirementInvalid(
-                    "feature disabled: %s" % repr(settings.F_DOCUMENT_FORMATTING)
+                    "feature disabled: %s" % repr(plugin_settings.F_DOCUMENT_FORMATTING)
                 )
 
-            if not server_capable(settings.F_DOCUMENT_FORMATTING):
+            if not server_capable(plugin_settings.F_DOCUMENT_FORMATTING):
                 raise RequirementInvalid(
-                    "server incapable: %s" % repr(settings.F_DOCUMENT_FORMATTING)
+                    "server incapable: %s" % repr(plugin_settings.F_DOCUMENT_FORMATTING)
                 )
 
             if not valid_source(view):
@@ -1089,11 +1089,11 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
         try:
             if quick:
-                check_requirement(settings.F_VALIDATE)
+                check_requirement(plugin_settings.F_VALIDATE)
                 method = PytoolsDiagnosticCommand.PYFLAKES
 
             else:
-                check_requirement(settings.F_DIAGNOSTIC)
+                check_requirement(plugin_settings.F_DIAGNOSTIC)
                 method = PytoolsDiagnosticCommand.PYLINT
 
         except RequirementInvalid as err:
@@ -1154,7 +1154,7 @@ class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
         if not PLUGIN_ENABLED:
             return
 
-        if feature_enabled(settings.W_DIAGNOSTIC_PANEL):
+        if feature_enabled(plugin_settings.W_DIAGNOSTIC_PANEL):
             self.show_diagnostic_panel()
 
     def show_diagnostic_panel(self):
@@ -1253,11 +1253,11 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
 
         view = self.view
 
-        if not feature_enabled(settings.F_RENAME):
-            raise RequirementInvalid("feature disabled %s" % repr(settings.F_RENAME))
+        if not feature_enabled(plugin_settings.F_RENAME):
+            raise RequirementInvalid("feature disabled %s" % repr(plugin_settings.F_RENAME))
 
-        if not server_capable(settings.F_RENAME):
-            raise RequirementInvalid("server incapable %s" % repr(settings.F_RENAME))
+        if not server_capable(plugin_settings.F_RENAME):
+            raise RequirementInvalid("server incapable %s" % repr(plugin_settings.F_RENAME))
 
         if any([v for v in sublime.active_window().views() if v.is_dirty()]):
             sublime.error_message(
