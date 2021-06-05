@@ -7,6 +7,7 @@ import threading
 import logging
 import os
 import time
+from contextlib import contextmanager
 from functools import wraps
 from itertools import dropwhile
 from .core import client
@@ -64,6 +65,15 @@ def boundary_lock(func):
     return wrapper
 
 
+@contextmanager
+def load_settings(name, *, save=False):
+    sublime_settings = sublime.load_settings(name)
+    yield sublime_settings
+
+    if save:
+        sublime.save_settings(name)
+
+
 # All features enabled
 ALL_ENABLED = False
 
@@ -71,8 +81,8 @@ ALL_ENABLED = False
 def feature_enabled(feature_name: str, *, default=True) -> bool:
     """check if feature enabled on settings"""
 
-    sublime_settings = sublime.load_settings(settings.SETTINGS_BASENAME)
-    return sublime_settings.get(feature_name, default) and ALL_ENABLED
+    with load_settings(settings.SETTINGS_BASENAME) as sublime_settings:
+        return sublime_settings.get(feature_name, default) and ALL_ENABLED
 
 
 SERVER_ONLINE = False
@@ -230,13 +240,7 @@ def valid_attribute(view, pos):
 
 SERVER_ERROR = False
 
-
-def save_settings(key: str, value: "Any") -> None:
-    """save settings to SublimeText settings file"""
-
-    settings = sublime.load_settings("Pytools.sublime-settings")
-    settings.set(key, value)
-    sublime.save_settings("Pytools.sublime-settings")
+INTERPRETER_SETTING_KEY = "interpreter"
 
 
 class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
@@ -248,44 +252,61 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
         except Exception:
             logger.error("set interpreter", exc_info=True)
 
-    @staticmethod
-    def set_interpreter(window: "sublime.Window") -> None:
+    def set_interpreter(self, window: "sublime.Window") -> None:
         """set python interpreter"""
 
         sys_python = interpreter.find_python()
         conda = interpreter.find_conda()
-        python_path = list(sys_python) + list(conda)
-        python_binary = [
-            os.path.join(path, interpreter.PYTHON_BIN) for path in python_path
+        python_paths = list(sys_python) + list(conda)
+        python_binaries = [
+            os.path.join(path, interpreter.PYTHON_BIN) for path in python_paths
         ]
 
         def input_path():
-            def save_input_settings(path):
-                if interpreter.ispython_path(path):
-                    save_settings("interpreter", path)
+            def on_done(path):
+                self.save_interpreter_path(path)
 
             window.show_input_panel(
                 caption="python path",
                 initial_text="",
-                on_done=save_input_settings,
+                on_done=on_done,
                 on_change=None,
                 on_cancel=None,
             )
 
-        def select_interpreter(index):
+        def select_interpreter(index=-1):
             if index < 0:
                 return  # cancel if index == -1
 
-            if index < len(python_path):
-                save_settings("interpreter", python_binary[index])
+            if index < len(python_paths):
+                self.save_interpreter_path(python_binaries[index])
+
             else:
                 input_path()
 
+        selected_index = -1
+
+        with load_settings(settings.SETTINGS_BASENAME) as sublime_settings:
+            active_interpreter = sublime_settings.get(INTERPRETER_SETTING_KEY)
+            try:
+                selected_index = python_binaries.index(active_interpreter)
+            except ValueError:
+                logger.debug("saved active interpreter not found")
+
         window.show_quick_panel(
-            items=python_binary + ["input path"],
+            items=python_binaries + ["input path"],
             on_select=select_interpreter,
+            selected_index=selected_index,
             flags=sublime.KEEP_OPEN_ON_FOCUS_LOST | sublime.MONOSPACE_FONT,
         )
+
+    def save_interpreter_path(self, path):
+        if not interpreter.is_python_path(path):
+            sublime.error_message("Invalid python path:\n%s" % path)
+            return
+
+        with load_settings(settings.SETTINGS_BASENAME, save=True) as sublime_settings:
+            sublime_settings.set(INTERPRETER_SETTING_KEY, path)
 
 
 class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
@@ -298,26 +319,27 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
             logger.debug("server error")
             return  # cancel if server error
 
-        sublime_settings = sublime.load_settings("Pytools.sublime-settings")
-        python_path = sublime_settings.get("interpreter")
+        with load_settings(settings.SETTINGS_BASENAME) as sublime_settings:
+            python_path = sublime_settings.get(INTERPRETER_SETTING_KEY)
 
-        if not python_path:
-            config = sublime.ok_cancel_dialog(
-                "Python interpreter not configured.\nConfigure now?",
-            )
+            if not python_path:
+                config = sublime.ok_cancel_dialog(
+                    "Python interpreter not configured.\nConfigure now?",
+                )
 
-            if config:
-                self.window.run_command("pytools_python_interpreter")
+                if config:
+                    self.window.run_command("pytools_python_interpreter")
 
-            else:
-                # disable all feature if python interpreter not configured
-                global ALL_ENABLED
-                ALL_ENABLED = False
+                else:
+                    # disable all feature if python interpreter not configured
+                    global ALL_ENABLED
+                    ALL_ENABLED = False
 
-            return
+                # cancel start thread
+                return
 
-        thread = threading.Thread(target=self.run_server, args=(python_path,))
-        thread.start()
+            thread = threading.Thread(target=self.run_server, args=(python_path,))
+            thread.start()
 
     @instance_lock
     @boundary_lock
@@ -424,13 +446,12 @@ class PytoolsShutdownserverCommand(sublime_plugin.WindowCommand):
 
 
 def config_preferences():
-    setting = sublime.load_settings("Python.sublime-settings")
-    setting.set("index_files", False)
-    setting.set("auto_complete_use_index", False)
-    setting.set("translate_tabs_to_spaces", True)
-    setting.set("show_definitions", False)
-    setting.set("tab_completion", False)
-    sublime.save_settings("Python.sublime-settings")
+    with load_settings("Python.sublime-settings", save=True) as sublime_settings:
+        sublime_settings.set("index_files", False)
+        sublime_settings.set("auto_complete_use_index", False)
+        sublime_settings.set("translate_tabs_to_spaces", True)
+        sublime_settings.set("show_definitions", False)
+        sublime_settings.set("tab_completion", False)
 
 
 def plugin_loaded():
