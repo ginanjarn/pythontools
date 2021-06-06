@@ -836,6 +836,9 @@ class Event(sublime_plugin.ViewEventListener):
             if not valid_attribute(view, point):
                 raise RequirementInvalid("invalid scope")
 
+            if point == view.size():
+                raise RequirementInvalid("out of range")
+
         def hover_text():
             logger.info("on get documentation")
 
