@@ -180,8 +180,12 @@ def set_capability(capability):
     SERVER_CAPABILITY[plugin_settings.F_DIAGNOSTIC] = capability.get(
         DIAGNOSTIC_CAPABILITY, False
     )
-    SERVER_CAPABILITY[plugin_settings.F_VALIDATE] = capability.get(VALIDATE_CAPABILITY, False)
-    SERVER_CAPABILITY[plugin_settings.F_RENAME] = capability.get(RENAME_CAPABILITY, False)
+    SERVER_CAPABILITY[plugin_settings.F_VALIDATE] = capability.get(
+        VALIDATE_CAPABILITY, False
+    )
+    SERVER_CAPABILITY[plugin_settings.F_RENAME] = capability.get(
+        RENAME_CAPABILITY, False
+    )
     logger.debug(SERVER_CAPABILITY)
 
 
@@ -305,7 +309,9 @@ class PytoolsPythonInterpreterCommand(sublime_plugin.WindowCommand):
             sublime.error_message("Invalid python path:\n%s" % path)
             return
 
-        with load_settings(plugin_settings.SETTINGS_BASENAME, save=True) as sublime_settings:
+        with load_settings(
+            plugin_settings.SETTINGS_BASENAME, save=True
+        ) as sublime_settings:
             sublime_settings.set(INTERPRETER_SETTING_KEY, path)
 
 
@@ -1257,10 +1263,14 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
         view = self.view
 
         if not feature_enabled(plugin_settings.F_RENAME):
-            raise RequirementInvalid("feature disabled %s" % repr(plugin_settings.F_RENAME))
+            raise RequirementInvalid(
+                "feature disabled %s" % repr(plugin_settings.F_RENAME)
+            )
 
         if not server_capable(plugin_settings.F_RENAME):
-            raise RequirementInvalid("server incapable %s" % repr(plugin_settings.F_RENAME))
+            raise RequirementInvalid(
+                "server incapable %s" % repr(plugin_settings.F_RENAME)
+            )
 
         if any([v for v in sublime.active_window().views() if v.is_dirty()]):
             sublime.error_message(
