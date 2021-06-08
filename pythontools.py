@@ -14,7 +14,7 @@ from .core import client
 from .core.sublimetext import document
 from .core.sublimetext import interpreter
 from .core.sublimetext import plugin_settings
-
+from .plugin_adapter import CompletionItem
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
@@ -562,10 +562,15 @@ class Completion:
     def __init__(self, completions: "Optional[List[Tuple[str, str]]]" = None):
 
         self.completions = completions if completions else []
-        self._completion_results = [completion[1] for completion in self.completions]
 
     def is_completed(self, prefix):
-        return prefix in self._completion_results
+        return any(
+            [
+                completion
+                for completion in self.completions
+                if completion.completion == prefix
+            ]
+        )
 
     def to_sublime(self):
         return (
@@ -576,9 +581,11 @@ class Completion:
     @staticmethod
     def build_completion(completions: "Iterable[str, Any]") -> "Iterator[Any, Any]":
         for completion in completions:
-            yield (
-                "%s  \t%s" % (completion["label"], completion["type"]),
-                completion["label"],
+            yield CompletionItem(
+                trigger=completion["label"],
+                kind=completion["type"],
+                completion=completion["label"],
+                details=completion.get("documentation", ""),
             )
 
     @classmethod
