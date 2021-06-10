@@ -9,7 +9,7 @@ import os
 import time
 from contextlib import contextmanager
 from functools import wraps
-from itertools import dropwhile
+from itertools import filterfalse
 from .core import client
 from .core.sublimetext import document
 from .core.sublimetext import interpreter
@@ -934,10 +934,11 @@ class Event(sublime_plugin.ViewEventListener):
 
         global PLUGIN_ENABLED
 
+        self.clear_cached_diagnostic()
+
         if valid_source(self.view):
             PLUGIN_ENABLED = True
             set_active_project()
-            self.clear_cached_diagnostic()
 
             if logger.level == logging.NOTSET or logger.level > logging.INFO:
                 self.view.run_command("pytools_show_diagnostic_panel")
@@ -958,7 +959,6 @@ class Event(sublime_plugin.ViewEventListener):
             return
 
         self.clear_cached_diagnostic()
-        self.view.run_command("pytools_clear_diagnostic")
 
     def on_post_save_async(self) -> None:
 
@@ -1056,22 +1056,46 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
         return valid_source(self.view)
 
 
+def clear_diagnostic():
+
+    window = sublime.active_window()
+    view = window.active_view()  # active document view
+
+    if not valid_source(view):
+        return
+
+    for severity in [
+        document.ERROR,
+        document.WARNING,
+        document.INFO,
+        document.HINT,
+    ]:
+        document.erase_regions(view, document.KEY_FORMAT % severity)
+
+    global DIAGNOSTICS
+
+    def ignored(mark: document.Mark):
+        return mark.view_id == view.view_id
+
+    DIAGNOSTICS = list(filterfalse(ignored, DIAGNOSTICS))
+
+    # destroy output panel
+    output_panel = document.OutputPanel(window, OUTPUT_PANEL_NAME)
+    output_panel.destroy()
+
+
 class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
     """Diagnostic command"""
 
     PYFLAKES = "validate"
     PYLINT = "diagnose"
 
-    @boundary_lock
     def run(self, edit, path=None, quick=False):
 
         if not PLUGIN_ENABLED:
             return
 
         logger.info("on diagnostic")
-
-        # clear current diagnostic
-        self.view.run_command("pytools_clear_diagnostic")
 
         view = self.view
         if not path:
@@ -1116,13 +1140,17 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
             logger.debug("input error : %s", repr(err))
 
         else:
-            thread = threading.Thread(target=self.diagnose, args=(method, path,))
+            thread = threading.Thread(target=self.diagnose, args=(method, path, view,))
             thread.start()
 
     @instance_lock
-    def diagnose(self, lint_method, path):
+    @boundary_lock
+    def diagnose(self, lint_method, path: str, view: sublime.View = None):
         logger.debug("on diagnostic thread")
         logger.debug("target : %s", path)
+
+        # clear current diagnostic
+        clear_diagnostic()
 
         lint_functions = {
             PytoolsDiagnosticCommand.PYFLAKES: client.analyzer.validate,
@@ -1136,7 +1164,7 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
             logger.debug(err)
 
         else:
-            output_panel = document.OutputPanel(self.view.window(), OUTPUT_PANEL_NAME)
+            output_panel = document.OutputPanel(view.window(), OUTPUT_PANEL_NAME)
 
             if result.error:  # any error
                 logger.debug(result.error)
@@ -1148,15 +1176,21 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
             global DIAGNOSTICS
 
+            # clean up before apply mark
+            def ignored(mark: document.Mark):
+                return mark.view_id == view.view_id
+
+            DIAGNOSTICS = list(filterfalse(ignored, DIAGNOSTICS))
+
             diagnostics = []
             for diagnostic in result.results:
-                diagnostics.append(document.Mark.from_rpc(self.view, diagnostic))
+                diagnostics.append(document.Mark.from_rpc(view, diagnostic))
 
             logger.debug(diagnostics)
             DIAGNOSTICS.extend(diagnostics)
-            document.mark_document(self.view, DIAGNOSTICS)
+            document.mark_document(view, DIAGNOSTICS)
 
-            self.view.run_command("pytools_show_diagnostic_panel")
+            view.run_command("pytools_show_diagnostic_panel")
 
     def is_visible(self):
         return valid_source(self.view)
@@ -1212,29 +1246,8 @@ class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):
 
         logger.info("on clear diagnostic")
 
-        window = sublime.active_window()
-        view = window.active_view()  # active document view
-        if not valid_source(view):
-            return
-
-        for severity in [
-            document.ERROR,
-            document.WARNING,
-            document.INFO,
-            document.HINT,
-        ]:
-            document.erase_regions(view, document.KEY_FORMAT % severity)
-
-        global DIAGNOSTICS
-
-        def removed(mark: document.Mark):
-            return mark.view_id == view.id()
-
-        DIAGNOSTICS = list(dropwhile(removed, DIAGNOSTICS))
-
-        # destroy output panel
-        output_panel = document.OutputPanel(window, OUTPUT_PANEL_NAME)
-        output_panel.destroy()
+        # clear diagnostic
+        clear_diagnostic()
 
     def is_visible(self):
         return valid_source(self.view)
