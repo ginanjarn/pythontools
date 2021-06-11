@@ -1081,7 +1081,7 @@ def clear_diagnostic():
 
     global DIAGNOSTICS
 
-    def ignored(mark: document.Mark):
+    def ignored(mark: document.MarkItem):
         return mark.view_id == view.view_id
 
     DIAGNOSTICS = list(filterfalse(ignored, DIAGNOSTICS))
@@ -1184,14 +1184,14 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
             global DIAGNOSTICS
 
             # clean up before apply mark
-            def ignored(mark: document.Mark):
+            def ignored(mark: document.MarkItem):
                 return mark.view_id == view.view_id
 
             DIAGNOSTICS = list(filterfalse(ignored, DIAGNOSTICS))
 
             diagnostics = []
             for diagnostic in result.results:
-                diagnostics.append(document.Mark.from_rpc(view, diagnostic))
+                diagnostics.append(document.MarkItem.from_rpc(view, diagnostic))
 
             logger.debug(diagnostics)
             DIAGNOSTICS.extend(diagnostics)
