@@ -896,7 +896,14 @@ class Event(sublime_plugin.ViewEventListener):
 
             else:
                 if not self.cached_diagnostic:
-                    diagnostic_message = document.diagnostic_message(DIAGNOSTICS, view)
+                    view_filtered_diagnostic = [
+                        diagnostic
+                        for diagnostic in DIAGNOSTICS
+                        if diagnostic.view_id == view.view_id
+                    ]
+                    diagnostic_message = document.diagnostic_message(
+                        view_filtered_diagnostic, view
+                    )
                     self.cached_diagnostic = diagnostic_message
 
                 row, _ = view.rowcol(point)
