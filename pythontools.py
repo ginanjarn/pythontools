@@ -896,10 +896,11 @@ class Event(sublime_plugin.ViewEventListener):
 
             else:
                 if not self.cached_diagnostic:
+                    logger.debug("build message")
                     view_filtered_diagnostic = [
                         diagnostic
                         for diagnostic in DIAGNOSTICS
-                        if diagnostic.view_id == view.view_id
+                        if diagnostic.view_id == view.id()
                     ]
                     diagnostic_message = document.diagnostic_message(
                         view_filtered_diagnostic, view
@@ -908,7 +909,6 @@ class Event(sublime_plugin.ViewEventListener):
 
                 row, _ = view.rowcol(point)
                 content = self.cached_diagnostic.get(row)
-                logger.debug("loaded : %s", content)
 
                 if content:  # any content
                     document.show_popup(
@@ -1082,7 +1082,7 @@ def clear_diagnostic():
     global DIAGNOSTICS
 
     def ignored(mark: document.MarkItem):
-        return mark.view_id == view.view_id
+        return mark.view_id == view.id()
 
     DIAGNOSTICS = list(filterfalse(ignored, DIAGNOSTICS))
 
@@ -1185,7 +1185,7 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
             # clean up before apply mark
             def ignored(mark: document.MarkItem):
-                return mark.view_id == view.view_id
+                return mark.view_id == view.id()
 
             DIAGNOSTICS = list(filterfalse(ignored, DIAGNOSTICS))
 
