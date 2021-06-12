@@ -619,16 +619,6 @@ class Event(sublime_plugin.ViewEventListener):
         # cache_diagnostic hold filtered diagnostic result for active view
         self.cached_diagnostic = None
 
-    @staticmethod
-    def build_completion(completions: "Iterable") -> "Iterator[Any, Any]":
-        """build completion"""
-
-        for completion in completions:
-            yield (
-                "%s  \t%s" % (completion["label"], completion["type"]),
-                completion["label"],
-            )
-
     @instance_lock
     def fetch_completions(self, prefix, params: CompletionParams):
         """fetch completion process"""
@@ -671,6 +661,26 @@ class Event(sublime_plugin.ViewEventListener):
         self.old_end_position = params.end
         document.show_completions(view)
 
+    def check_completion_requirements(self, view, location):
+        """if requirements valid
+
+        Raises:
+            RequirementInvalid
+        """
+
+        if not feature_enabled(plugin_settings.F_AUTOCOMPLETE):
+            raise RequirementInvalid(
+                "feature disabled: %s" % repr(plugin_settings.F_AUTOCOMPLETE)
+            )
+
+        if not server_capable(plugin_settings.F_AUTOCOMPLETE):
+            raise RequirementInvalid(
+                "server incapable: %s" % repr(plugin_settings.F_AUTOCOMPLETE)
+            )
+
+        if not valid_attribute(view, location):
+            raise RequirementInvalid("invalid scope")
+
     def on_query_completions(self, prefix, locations):
         """on_query_completion event"""
 
@@ -684,30 +694,10 @@ class Event(sublime_plugin.ViewEventListener):
             view.window().run_command("pytools_runserver")
             return None
 
-        def check_requirements():
-            """if requirements valid
-
-            Raises:
-                RequirementInvalid
-            """
-
-            if not feature_enabled(plugin_settings.F_AUTOCOMPLETE):
-                raise RequirementInvalid(
-                    "feature disabled: %s" % repr(plugin_settings.F_AUTOCOMPLETE)
-                )
-
-            if not server_capable(plugin_settings.F_AUTOCOMPLETE):
-                raise RequirementInvalid(
-                    "server incapable: %s" % repr(plugin_settings.F_AUTOCOMPLETE)
-                )
-
-            if not valid_attribute(view, locations[0]):
-                raise RequirementInvalid("invalid scope")
-
         empty_completion = Completion()
 
         try:
-            check_requirements()
+            self.check_completion_requirements(view, locations[0])
             location = max(view.sel()[0].a, locations[0])
             params = CompletionParams.from_view(view, location)
 
@@ -826,6 +816,85 @@ class Event(sublime_plugin.ViewEventListener):
                 update=is_updating,
             )
 
+    def check_docstring_requirements(self, view, point):
+
+        if not feature_enabled(plugin_settings.F_DOCUMENTATION):
+            raise RequirementInvalid(
+                "feature disabled: %s" % repr(plugin_settings.F_DOCUMENTATION)
+            )
+
+        if not server_capable(plugin_settings.F_DOCUMENTATION):
+            raise RequirementInvalid(
+                "server incapable: %s" % repr(plugin_settings.F_DOCUMENTATION)
+            )
+
+        if not valid_attribute(view, point):
+            raise RequirementInvalid("invalid scope")
+
+        if point == view.size():
+            raise RequirementInvalid("out of range")
+
+    def on_hover_text(self, view, point):
+        logger.info("on get documentation")
+
+        if not SERVER_ONLINE:
+            view.window().run_command("pytools_runserver")
+            return
+
+        try:
+            self.check_docstring_requirements(view, point)
+        except RequirementInvalid as err:
+            logger.debug(err)
+            return
+        else:
+            thread = threading.Thread(target=self.fetch_documentation, args=(point,))
+            thread.start()
+
+    def check_lint_message_requirements(self, view):
+        if not DIAGNOSTICS:
+            raise RequirementInvalid("no any diagnostics message")
+
+        if not valid_source(view):
+            raise RequirementInvalid("invalid source")
+
+        if not any(
+            [
+                feature_enabled(plugin_settings.F_DIAGNOSTIC),
+                feature_enabled(plugin_settings.F_VALIDATE),
+            ]
+        ):
+            raise RequirementInvalid("feature disabled")
+
+    def on_hover_gutter(self, view, point):
+        logger.info("on show diagnostic")
+
+        try:
+            self.check_lint_message_requirements(view)
+
+        except RequirementInvalid as err:
+            logger.debug(err)
+
+        else:
+            if not self.cached_diagnostic:
+                logger.debug("build message")
+                view_filtered_diagnostic = [
+                    diagnostic
+                    for diagnostic in DIAGNOSTICS
+                    if diagnostic.view_id == view.id()
+                ]
+                diagnostic_message = document.diagnostic_message(
+                    view_filtered_diagnostic, view
+                )
+                self.cached_diagnostic = diagnostic_message
+
+            row, _ = view.rowcol(point)
+            content = self.cached_diagnostic.get(row)
+
+            if content:  # any content
+                document.show_popup(
+                    view, self.decorate(content), point, callback=None, update=True
+                )
+
     def on_hover(self, point, hover_zone):
         """on_hover event"""
 
@@ -834,91 +903,10 @@ class Event(sublime_plugin.ViewEventListener):
 
         view = self.view
 
-        def check_docstring_requirements():
-
-            if not feature_enabled(plugin_settings.F_DOCUMENTATION):
-                raise RequirementInvalid(
-                    "feature disabled: %s" % repr(plugin_settings.F_DOCUMENTATION)
-                )
-
-            if not server_capable(plugin_settings.F_DOCUMENTATION):
-                raise RequirementInvalid(
-                    "server incapable: %s" % repr(plugin_settings.F_DOCUMENTATION)
-                )
-
-            if not valid_attribute(view, point):
-                raise RequirementInvalid("invalid scope")
-
-            if point == view.size():
-                raise RequirementInvalid("out of range")
-
-        def hover_text():
-            logger.info("on get documentation")
-
-            if not SERVER_ONLINE:
-                view.window().run_command("pytools_runserver")
-                return
-
-            try:
-                check_docstring_requirements()
-            except RequirementInvalid as err:
-                logger.debug(err)
-                return
-            else:
-                thread = threading.Thread(
-                    target=self.fetch_documentation, args=(point,)
-                )
-                thread.start()
-
-        def check_lint_message_requirements():
-            if not DIAGNOSTICS:
-                raise RequirementInvalid("no any diagnostics message")
-
-            if not valid_source(view):
-                raise RequirementInvalid("invalid source")
-
-            if not any(
-                [
-                    feature_enabled(plugin_settings.F_DIAGNOSTIC),
-                    feature_enabled(plugin_settings.F_VALIDATE),
-                ]
-            ):
-                raise RequirementInvalid("feature disabled")
-
-        def hover_gutter():
-            logger.info("on show diagnostic")
-
-            try:
-                check_lint_message_requirements()
-
-            except RequirementInvalid as err:
-                logger.debug(err)
-
-            else:
-                if not self.cached_diagnostic:
-                    logger.debug("build message")
-                    view_filtered_diagnostic = [
-                        diagnostic
-                        for diagnostic in DIAGNOSTICS
-                        if diagnostic.view_id == view.id()
-                    ]
-                    diagnostic_message = document.diagnostic_message(
-                        view_filtered_diagnostic, view
-                    )
-                    self.cached_diagnostic = diagnostic_message
-
-                row, _ = view.rowcol(point)
-                content = self.cached_diagnostic.get(row)
-
-                if content:  # any content
-                    document.show_popup(
-                        view, self.decorate(content), point, callback=None, update=True
-                    )
-
         if hover_zone == sublime.HOVER_TEXT:
-            hover_text()
+            self.on_hover_text(view, point)
         elif hover_zone == sublime.HOVER_GUTTER:
-            hover_gutter()
+            self.on_hover_gutter(view, point)
 
     def clear_cached_diagnostic(self):
         if self.cached_diagnostic:
@@ -982,6 +970,21 @@ class Event(sublime_plugin.ViewEventListener):
 class PytoolsFormatCommand(sublime_plugin.TextCommand):
     """Formatting command"""
 
+    def check_formantting_requirements(self, view):
+
+        if not feature_enabled(plugin_settings.F_DOCUMENT_FORMATTING):
+            raise RequirementInvalid(
+                "feature disabled: %s" % repr(plugin_settings.F_DOCUMENT_FORMATTING)
+            )
+
+        if not server_capable(plugin_settings.F_DOCUMENT_FORMATTING):
+            raise RequirementInvalid(
+                "server incapable: %s" % repr(plugin_settings.F_DOCUMENT_FORMATTING)
+            )
+
+        if not valid_source(view):
+            raise RequirementInvalid("invalid source")
+
     def run(self, edit):
 
         if not PLUGIN_ENABLED:
@@ -994,23 +997,8 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
             view.window().run_command("pytools_runserver")
             return
 
-        def check_requirements():
-
-            if not feature_enabled(plugin_settings.F_DOCUMENT_FORMATTING):
-                raise RequirementInvalid(
-                    "feature disabled: %s" % repr(plugin_settings.F_DOCUMENT_FORMATTING)
-                )
-
-            if not server_capable(plugin_settings.F_DOCUMENT_FORMATTING):
-                raise RequirementInvalid(
-                    "server incapable: %s" % repr(plugin_settings.F_DOCUMENT_FORMATTING)
-                )
-
-            if not valid_source(view):
-                raise RequirementInvalid("invalid source")
-
         try:
-            check_requirements()
+            self.check_formantting_requirements(view)
 
         except RequirementInvalid as err:
             logger.debug(err)
@@ -1097,6 +1085,31 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
     PYFLAKES = "validate"
     PYLINT = "diagnose"
 
+    def check_diagnostic_requirement(self, feature, path):
+        if not feature_enabled(feature):
+            raise RequirementInvalid("feature disabled : %s" % feature)
+
+        if not server_capable(feature):
+            raise RequirementInvalid("server incapable : %s" % feature)
+
+        if os.path.isdir(path):
+            # path is directory
+            pass
+
+        elif os.path.isfile(path):
+            # path is file
+
+            from re import findall
+
+            if not any(findall(r".*\.py[ic]?", path)):
+                # file is not python file
+                sublime.error_message("Unable lint non-python file !")
+                raise RequirementInvalid("not python file")
+
+        else:
+            # invalid path
+            raise RequirementInvalid("invalid path : %s" % path)
+
     def run(self, edit, path=None, quick=False):
 
         if not PLUGIN_ENABLED:
@@ -1109,38 +1122,13 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
             file_name = view.file_name()
             path = file_name if file_name else ""
 
-        def check_requirement(feature):
-            if not feature_enabled(feature):
-                raise RequirementInvalid("feature disabled : %s" % feature)
-
-            if not server_capable(feature):
-                raise RequirementInvalid("server incapable : %s" % feature)
-
-            if os.path.isdir(path):
-                # path is directory
-                pass
-
-            elif os.path.isfile(path):
-                # path is file
-
-                from re import findall
-
-                if not any(findall(r".*\.py[ic]?", path)):
-                    # file is not python file
-                    sublime.error_message("Unable lint non-python file !")
-                    raise RequirementInvalid("not python file")
-
-            else:
-                # invalid path
-                raise RequirementInvalid("invalid path : %s" % path)
-
         try:
             if quick:
-                check_requirement(plugin_settings.F_VALIDATE)
+                self.check_diagnostic_requirement(plugin_settings.F_VALIDATE, path)
                 method = PytoolsDiagnosticCommand.PYFLAKES
 
             else:
-                check_requirement(plugin_settings.F_DIAGNOSTIC)
+                self.check_diagnostic_requirement(plugin_settings.F_DIAGNOSTIC, path)
                 method = PytoolsDiagnosticCommand.PYLINT
 
         except RequirementInvalid as err:
@@ -1214,6 +1202,17 @@ class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
         if feature_enabled(plugin_settings.W_DIAGNOSTIC_PANEL):
             self.show_diagnostic_panel()
 
+    def build_message(self, view, diagnostics):
+        for diagnostic in diagnostics:
+            message = diagnostic.message
+            row, col = view.rowcol(diagnostic.region.a)
+            file_name = os.path.basename(view.file_name())
+
+            # diagnostic message format
+            yield "{file_name}:{row}:{col}: {message}".format(
+                file_name=file_name, row=row + 1, col=col, message=message
+            )
+
     def show_diagnostic_panel(self):
         filtered_diagnostics = [
             diagnostic
@@ -1224,19 +1223,10 @@ class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
         window = sublime.active_window()
         view = window.active_view()
 
-        def build_message(diagnostics):
-            for diagnostic in diagnostics:
-                message = diagnostic.message
-                row, col = view.rowcol(diagnostic.region.a)
-                file_name = os.path.basename(view.file_name())
-                yield "{file_name}:{row}:{col}: {message}".format(
-                    file_name=file_name, row=row + 1, col=col, message=message
-                )
-
         output_panel = document.OutputPanel(window, OUTPUT_PANEL_NAME)
 
         if filtered_diagnostics:
-            output_panel.append(*build_message(filtered_diagnostics))
+            output_panel.append(*self.build_message(view, filtered_diagnostics))
             output_panel.show()
 
         else:
