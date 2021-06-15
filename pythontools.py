@@ -43,10 +43,14 @@ def instance_lock(func):
         key = "PROCESS_LOCK"
         view = sublime.active_window().active_view()
         view.set_status(key, "BUSY")
-        with INSTANCE_LOCK:
-            result = func(*args, **kwargs)
-        view.erase_status(key)
-        return result
+
+        INSTANCE_LOCK.acquire()
+        try:
+            return func(*args, **kwargs)
+
+        finally:
+            view.erase_status(key)
+            INSTANCE_LOCK.release()
 
     return wrapper
 
