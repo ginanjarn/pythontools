@@ -12,7 +12,7 @@ import signal
 import re
 
 from importlib.util import find_spec
-from typing import Any, Tuple
+from typing import Any, Tuple, Dict
 
 from api import rpc, errors
 from api import completion, hover, document_formatting, rename, analyzer
@@ -44,12 +44,12 @@ class TransactionMessage:
     def content(self):
         return self._content_encoded.decode(self.encoding)
 
-    def to_bytes(self):
-        headers = []
-        for key, value in self._headers.items():
-            headers.append(f"{key}: {value}".encode(self.encoding))
+    def generate_header_item(self, headers: Dict[str, str], encoding="ascii"):
+        for key, value in headers.items():
+            yield f"{key}: {value}".encode(encoding)
 
-        merged_headers = b"\r\n".join(headers)
+    def to_bytes(self):
+        merged_headers = b"\r\n".join(self.generate_header_item(self._headers))
         return b"\r\n\r\n".join([merged_headers, self._content_encoded])
 
     @staticmethod
@@ -162,7 +162,6 @@ class ServerHandler(socketserver.BaseRequestHandler):
             F_RENAME: bool(find_spec("rope")),
             F_DIAGNOSTIC: bool(find_spec("pylint")),
             F_VALIDATE: bool(find_spec("pyflakes")),
-            # "pid": os.getpid(),
         }
 
     def change_workspace(self, params: rpc.Params) -> Any:

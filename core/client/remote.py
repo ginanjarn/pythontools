@@ -33,14 +33,13 @@ class TransactionMessage:
     def content(self):
         return self._content_encoded.decode(self.encoding)
 
-    def to_bytes(self):
-        headers = []
-        for key, value in self._headers.items():
-            headers.append(
-                "{key}: {value}".format(key=key, value=value).encode(self.encoding)
-            )
+    def generate_header_item(self, headers, encoding="ascii"):
+        for key, value in headers.items():
+            yield "{key}: {value}".format(key=key, value=value).encode(encoding)
 
-        merged_headers = b"\r\n".join(headers)
+    def to_bytes(self):
+
+        merged_headers = b"\r\n".join(self.generate_header_item(self._headers))
         return b"\r\n\r\n".join([merged_headers, self._content_encoded])
 
     @staticmethod
@@ -261,7 +260,7 @@ def run_server(server_path: str, activate_path: str = None) -> "process":
             startupinfo=startupinfo,
         )
 
-        time.sleep(3)   # wait server ready
+        time.sleep(3)  # wait server ready
         err_message = None
         poll = server_proc.poll()
         if poll:
