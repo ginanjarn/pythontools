@@ -20,7 +20,25 @@ sh.setLevel(logging.DEBUG)
 logger.addHandler(sh)
 
 
+# TransactionMessage separator
+HEADER_ITEMS_SEPARATOR = b"\r\n"
+BODY_SEPARATOR = b"\r\n\r\n"
+
+
 class TransactionMessage:
+    """Transaction message
+
+    Property:
+    * content: str
+        message content
+
+    * encoding: str
+        content encoding
+
+    * _headers: dict
+        message headers
+    """
+
     def __init__(self, content, encoding="utf-8", headers=None):
         self._content_encoded = content.encode(encoding)
         self.encoding = encoding
@@ -30,24 +48,31 @@ class TransactionMessage:
         }
 
     @property
-    def content(self):
+    def content(self) -> str:
         return self._content_encoded.decode(self.encoding)
 
-    def generate_header_item(self, headers, encoding="ascii"):
+    @staticmethod
+    def _generate_header_item(headers, encoding="ascii"):
         for key, value in headers.items():
             yield "{key}: {value}".format(key=key, value=value).encode(encoding)
 
-    def to_bytes(self):
+    def to_bytes(self) -> bytes:
+        """generate encoded message"""
 
-        merged_headers = b"\r\n".join(self.generate_header_item(self._headers))
-        return b"\r\n\r\n".join([merged_headers, self._content_encoded])
+        merged_headers = HEADER_ITEMS_SEPARATOR.join(
+            self._generate_header_item(self._headers)
+        )
+        return BODY_SEPARATOR.join([merged_headers, self._content_encoded])
 
     @staticmethod
-    def parse_header(header: bytes) -> dict:
+    def _parse_header(header: bytes, encoding: str = "ascii"):
+        """parse header items"""
+
         parsed = {}
-        for item in header.splitlines():
-            decoded = item.decode("ascii")
-            matches = re.findall(r"(.*): (.*)\s?", decoded)
+        decoded_header = header.decode(encoding)
+
+        for line in decoded_header.splitlines():
+            matches = re.findall(r"(.*): (.*)\s?", line)
             for match in matches:
                 parsed[match[0]] = match[1]
 
@@ -55,9 +80,11 @@ class TransactionMessage:
 
     @classmethod
     def from_bytes(cls, data: bytes):
-        header, body = data.split(b"\r\n\r\n")
+        """create message from encoded bytes"""
 
-        parsed_header = TransactionMessage.parse_header(header)
+        header, body = data.split(BODY_SEPARATOR)
+
+        parsed_header = TransactionMessage._parse_header(header)
         required_size = int(parsed_header.get("Content-Length"))
         if len(body) != required_size:
             raise ValueError(
