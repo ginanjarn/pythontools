@@ -230,15 +230,26 @@ def request(
         raise ServerOffline(err) from None
 
 
-def run_server(server_path: str, activate_path: str = None) -> "process":
+def run_server(
+    server_path: str, *, interpreter_path: str = None, activate_path: str = None
+) -> None:
+
     """server subprocess
+
+    Parameter:
+        server_path: str
+            path to server script
+
+        activate_path: str
+            path to activate environment executable
 
     Raises:
         ServerError
     """
 
     activator = [] if not activate_path else activate_path + ["&&"]
-    run_server_cmd = activator + ["python", server_path]
+    interpreter = interpreter_path if interpreter_path else "python"
+    run_server_cmd = activator + [interpreter, server_path]
     logger.debug(run_server_cmd)
 
     workdir = os.path.dirname(server_path)
@@ -286,8 +297,6 @@ def run_server(server_path: str, activate_path: str = None) -> "process":
     except Exception as err:
         logger.exception("cannot run_server", exc_info=True)
         raise ServerError(err) from err
-
-    return server_proc
 
 
 def generate_id() -> str:

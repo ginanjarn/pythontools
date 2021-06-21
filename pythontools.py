@@ -369,7 +369,11 @@ class PytoolsRunserverCommand(sublime_plugin.WindowCommand):
 
             @boundary_lock
             def runserver():
-                client.run_server(server_path, activate_path=activate_path)
+                client.run_server(
+                    server_path,
+                    interpreter_path=python_path,
+                    activate_path=activate_path,
+                )
 
             # run server
             runserver()
