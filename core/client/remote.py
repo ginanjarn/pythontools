@@ -8,7 +8,6 @@ import socket
 import subprocess
 import time
 import json
-import random
 import logging
 
 logger = logging.getLogger(__name__)
@@ -135,7 +134,8 @@ class RequestMessage(dict):
         self[PARAMS] = par
 
     @classmethod
-    def builder(cls, id_, method=None, params=None):
+    def builder(cls, method=None, params=None):
+        id_ = str(time.time())
         return cls({ID: id_, METHOD: method, PARAMS: params})
 
     @classmethod
@@ -174,7 +174,8 @@ class ResponseMessage(dict):
         self[ERROR] = err
 
     @classmethod
-    def builder(cls, id_, results=None, error=None):
+    def builder(cls, results=None, error=None):
+        id_ = str(time.time())
         return cls({ID: id_, RESULTS: results, ERROR: error})
 
     @classmethod
@@ -326,11 +327,6 @@ def run_server(
         raise ServerError(err) from err
 
 
-def generate_id() -> str:
-    """generate request id"""
-    return str(random.random())
-
-
 def ping(*args: "Any") -> "ResponseMessage":
     """ping test
 
@@ -338,7 +334,7 @@ def ping(*args: "Any") -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage.builder(generate_id(), "ping", args)
+    message = RequestMessage.builder("ping", args)
     response = request(message.to_rpc(), timeout=0.5)
     return ResponseMessage.from_rpc(response)
 
@@ -346,7 +342,7 @@ def ping(*args: "Any") -> "ResponseMessage":
 def initialize(*args: "Any") -> "ResponseMessage":
     """initialize server"""
 
-    message = RequestMessage.builder(generate_id(), "initialize", args)
+    message = RequestMessage.builder("initialize", args)
     response = request(message.to_rpc(), timeout=30)
     return ResponseMessage.from_rpc(response)
 
@@ -360,7 +356,7 @@ def shutdown(*args: "Any") -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage.builder(generate_id(), "exit", args)
+    message = RequestMessage.builder("exit", args)
     response = request(message.to_rpc(), timeout=15)
     return ResponseMessage.from_rpc(response)
 
@@ -374,7 +370,7 @@ def change_workspace(workspace_dir: str) -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage.builder(generate_id(), "document.changeWorkspace")
+    message = RequestMessage.builder("document.changeWorkspace")
     message.params = {"uri": workspace_dir}
     response = request(message.to_rpc(), timeout=15)
     return ResponseMessage.from_rpc(response)
