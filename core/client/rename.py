@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request, generate_id
+from .remote import RequestMessage, ResponseMessage, request
 
 
 logger = logging.getLogger(__name__)

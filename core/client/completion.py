@@ -2,7 +2,7 @@
 
 
 import logging
-from .remote import RequestMessage, ResponseMessage, request, generate_id
+from .remote import RequestMessage, ResponseMessage, request
 
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ def fetch_completion(src: str, line: int, character: int) -> "ResponseMessage":
         ServerOffline
     """
 
-    message = RequestMessage.builder(generate_id(), "textDocument.completion")
+    message = RequestMessage.builder("textDocument.completion")
     message.params = {
         "uri": src,
         "location": {"line": line, "character": character},

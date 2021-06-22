@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Dict, Any, Optional
 from io import StringIO
 import json
+import time
 
 # fmt: off
 
@@ -52,7 +53,8 @@ class RequestMessage(dict):
         return self[PARAMS]
 
     @classmethod
-    def builder(cls, id_, method=None, params=None):
+    def builder(cls, method=None, params=None):
+        id_ = str(time.time())
         return cls({ID: id_, METHOD: method, PARAMS: params})
 
     @classmethod
@@ -91,7 +93,8 @@ class ResponseMessage(dict):
         self[ERROR] = err
 
     @classmethod
-    def builder(cls, id_, results=None, error=None):
+    def builder(cls, results=None, error=None):
+        id_ = str(time.time())
         return cls({ID: id_, RESULTS: results, ERROR: error})
 
     @classmethod
@@ -116,7 +119,7 @@ class ResponseError(dict):
         return self[DATA]
 
     @classmethod
-    def builder(cls, code: ErrorCode, message: str, data: Optional[Any]=None):
+    def builder(cls, code: ErrorCode, message: str, data: Optional[Any] = None):
         return cls({CODE: code.value, MESSAGE: message, DATA: data})
 
     @classmethod

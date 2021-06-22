@@ -12,7 +12,7 @@ import signal
 import re
 
 from importlib.util import find_spec
-from typing import Any, Tuple
+from typing import Any, Tuple, Dict, Iterator
 
 from api import rpc, errors
 from api import completion, hover, document_formatting, rename, analyzer
@@ -31,7 +31,25 @@ logger.addHandler(sh)
 logger.addHandler(fh)
 
 
+# TransactionMessage separator
+HEADER_ITEMS_SEPARATOR = b"\r\n"
+BODY_SEPARATOR = b"\r\n\r\n"
+
+
 class TransactionMessage:
+    """Transaction message
+
+    Property:
+    * content: str
+        message content
+
+    * encoding: str
+        content encoding
+
+    * _headers: dict
+        message headers
+    """
+
     def __init__(self, content, encoding="utf-8", headers=None):
         self._content_encoded = content.encode(encoding)
         self.encoding = encoding
@@ -41,23 +59,34 @@ class TransactionMessage:
         }
 
     @property
-    def content(self):
+    def content(self) -> str:
         return self._content_encoded.decode(self.encoding)
 
-    def to_bytes(self):
-        headers = []
-        for key, value in self._headers.items():
-            headers.append(f"{key}: {value}".encode(self.encoding))
+    @staticmethod
+    def _generate_header_item(
+        headers: Dict[str, str], encoding: str = "ascii"
+    ) -> Iterator[str]:
 
-        merged_headers = b"\r\n".join(headers)
-        return b"\r\n\r\n".join([merged_headers, self._content_encoded])
+        for key, value in headers.items():
+            yield f"{key}: {value}".encode(encoding)
+
+    def to_bytes(self) -> bytes:
+        """generate encoded message"""
+
+        merged_headers = HEADER_ITEMS_SEPARATOR.join(
+            self._generate_header_item(self._headers)
+        )
+        return BODY_SEPARATOR.join([merged_headers, self._content_encoded])
 
     @staticmethod
-    def parse_header(header: bytes) -> dict:
+    def _parse_header(header: bytes, encoding: str = "ascii") -> Dict[str, str]:
+        """parse header items"""
+
         parsed = {}
-        for item in header.splitlines():
-            decoded = item.decode("ascii")
-            matches = re.findall(r"(.*): (.*)\s?", decoded)
+        decoded_header = header.decode(encoding)
+
+        for line in decoded_header.splitlines():
+            matches = re.findall(r"(.*): (.*)\s?", line)
             for match in matches:
                 parsed[match[0]] = match[1]
 
@@ -65,9 +94,11 @@ class TransactionMessage:
 
     @classmethod
     def from_bytes(cls, data: bytes):
-        header, body = data.split(b"\r\n\r\n")
+        """create message from encoded bytes"""
 
-        parsed_header = TransactionMessage.parse_header(header)
+        header, body = data.split(BODY_SEPARATOR)
+
+        parsed_header = TransactionMessage._parse_header(header)
         required_size = int(parsed_header.get("Content-Length"))
         if len(body) != required_size:
             raise ValueError(
@@ -131,18 +162,20 @@ class ServerHandler(socketserver.BaseRequestHandler):
             self.finish()
 
     def setup(self) -> None:
-        self.commands[PING] = self.ping
-        self.commands[EXIT] = self.exit
-        self.commands[INITIALIZE] = self.initialize
-        self.commands[CHANGE_WORKPACE] = self.change_workspace
 
-        # features map ++++++++++++++++++++++++++++++++++++++++++
-        self.commands[COMPLETION] = self.complete
-        self.commands[HOVER] = self.hover
-        self.commands[FORMATTING] = self.formatting
-        self.commands[RENAME] = self.rename
-        self.commands[DIAGNOSTIC] = self.get_diagnostic
-        self.commands[VALIDATE] = self.validate_source
+        self.commands = {
+            PING: self.ping,
+            EXIT: self.exit,
+            INITIALIZE: self.initialize,
+            CHANGE_WORKPACE: self.change_workspace,
+            # features map ++++++++++++++++++++++++++++++++++++++++++
+            COMPLETION: self.complete,
+            HOVER: self.hover,
+            FORMATTING: self.formatting,
+            RENAME: self.rename,
+            DIAGNOSTIC: self.get_diagnostic,
+            VALIDATE: self.validate_source,
+        }
 
     def ping(self, params: rpc.Params) -> Any:
         return params
@@ -162,7 +195,6 @@ class ServerHandler(socketserver.BaseRequestHandler):
             F_RENAME: bool(find_spec("rope")),
             F_DIAGNOSTIC: bool(find_spec("pylint")),
             F_VALIDATE: bool(find_spec("pyflakes")),
-            # "pid": os.getpid(),
         }
 
     def change_workspace(self, params: rpc.Params) -> Any:
@@ -271,63 +303,63 @@ class ServerHandler(socketserver.BaseRequestHandler):
     def handle_request(self, message: bytes) -> bytes:
         """handle request"""
 
-        resp_message = rpc.ResponseMessage.builder("-1")
+        response_message = rpc.ResponseMessage.builder()
 
         try:
             # parsing requestcontent
             try:
-                req_message = rpc.RequestMessage.from_rpc(
+                request_message = rpc.RequestMessage.from_rpc(
                     TransactionMessage.from_bytes(message).content
                 )
 
             except json.JSONDecodeError as err:
                 raise errors.InvalidRPCMessage(err) from err
 
-            resp_message.id_ = req_message.id_
+            response_message.id_ = request_message.id_
 
         except Exception as err:
             logger.debug("loading message error", exc_info=True)
-            resp_message.error = repr(err)
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            response_message.error = repr(err)
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         try:
             # processing
 
-            results = self.run(req_message.method, req_message.params)
-            resp_message.id_ = req_message.id_
-            resp_message.results = results
+            results = self.run(request_message.method, request_message.params)
+            response_message.id_ = request_message.id_
+            response_message.results = results
 
         except errors.MethodNotFound as err:
             logger.debug("invalid method error : %s", err)
-            resp_message.error = rpc.ResponseError.builder(
+            response_message.error = rpc.ResponseError.builder(
                 rpc.ErrorCode.METHOD_NOT_FOUND_ERROR, message=str(err)
             )
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         except errors.InvalidParams as err:
             logger.debug("invalid params error : %s", err)
-            resp_message.error = rpc.ResponseError.builder(
+            response_message.error = rpc.ResponseError.builder(
                 rpc.ErrorCode.INVALID_PARAMS_ERROR, message=str(err)
             )
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         except errors.InvalidInput as err:
             logger.debug("invalid input error : %s", err)
-            resp_message.error = rpc.ResponseError.builder(
+            response_message.error = rpc.ResponseError.builder(
                 rpc.ErrorCode.INPUT_ERROR, message=str(err)
             )
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         except Exception as err:
             logger.exception("process exception : %s", err)
-            resp_message.error = rpc.ResponseError.builder(
+            response_message.error = rpc.ResponseError.builder(
                 rpc.ErrorCode.INTERNAL_ERROR, message=repr(err)
             )
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         else:
-            logger.debug(resp_message)
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            logger.debug(response_message)
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
     def handle(self) -> None:
         """server handle"""

@@ -1,7 +1,7 @@
 import sublime
 import sublime_plugin
 from contextlib import contextmanager
-from .core.sublimetext import settings as base_settings
+from .core.sublimetext import plugin_settings
 
 
 # menu check state holder
@@ -15,11 +15,11 @@ DIAGNOSTIC_PANEL = False
 
 @contextmanager
 def load_settings(save=False):
-    sublime_settings = sublime.load_settings(base_settings.SETTINGS_BASENAME)
+    sublime_settings = sublime.load_settings(plugin_settings.SETTINGS_BASENAME)
     yield sublime_settings
 
     if save:
-        sublime.save_settings(base_settings.SETTINGS_BASENAME)
+        sublime.save_settings(plugin_settings.SETTINGS_BASENAME)
 
 
 def update_menu():
@@ -33,12 +33,12 @@ def update_menu():
     global DIAGNOSTIC_PANEL
 
     with load_settings(save=False) as settings:
-        AUTOCOMPLETE = settings.get(base_settings.F_AUTOCOMPLETE, True)
-        DOCUMENTATION = settings.get(base_settings.F_DOCUMENTATION, True)
-        DOCUMENT_FORMATTING = settings.get(base_settings.F_DOCUMENT_FORMATTING, True)
-        DIAGNOSTIC = settings.get(base_settings.F_DIAGNOSTIC, True)
-        VALIDATE = settings.get(base_settings.F_VALIDATE, True)
-        DIAGNOSTIC_PANEL = settings.get(base_settings.W_DIAGNOSTIC_PANEL, True)
+        AUTOCOMPLETE = settings.get(plugin_settings.F_AUTOCOMPLETE, True)
+        DOCUMENTATION = settings.get(plugin_settings.F_DOCUMENTATION, True)
+        DOCUMENT_FORMATTING = settings.get(plugin_settings.F_DOCUMENT_FORMATTING, True)
+        DIAGNOSTIC = settings.get(plugin_settings.F_DIAGNOSTIC, True)
+        VALIDATE = settings.get(plugin_settings.F_VALIDATE, True)
+        DIAGNOSTIC_PANEL = settings.get(plugin_settings.W_DIAGNOSTIC_PANEL, True)
 
 
 def plugin_loaded():
@@ -48,8 +48,8 @@ def plugin_loaded():
 class PytoolsSetAutocompleteCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         with load_settings(save=True) as settings:
-            value = settings.get(base_settings.F_AUTOCOMPLETE, True)
-            settings.set(base_settings.F_AUTOCOMPLETE, not value)
+            value = settings.get(plugin_settings.F_AUTOCOMPLETE, True)
+            settings.set(plugin_settings.F_AUTOCOMPLETE, not value)
             update_menu()
 
     def is_checked(self):
@@ -59,8 +59,8 @@ class PytoolsSetAutocompleteCommand(sublime_plugin.TextCommand):
 class PytoolsSetDocumentationCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         with load_settings(save=True) as settings:
-            value = settings.get(base_settings.F_DOCUMENTATION, True)
-            settings.set(base_settings.F_DOCUMENTATION, not value)
+            value = settings.get(plugin_settings.F_DOCUMENTATION, True)
+            settings.set(plugin_settings.F_DOCUMENTATION, not value)
             update_menu()
 
     def is_checked(self):
@@ -70,8 +70,8 @@ class PytoolsSetDocumentationCommand(sublime_plugin.TextCommand):
 class PytoolsSetDocumentformattingCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         with load_settings(save=True) as settings:
-            value = settings.get(base_settings.F_DOCUMENT_FORMATTING, True)
-            settings.set(base_settings.F_DOCUMENT_FORMATTING, not value)
+            value = settings.get(plugin_settings.F_DOCUMENT_FORMATTING, True)
+            settings.set(plugin_settings.F_DOCUMENT_FORMATTING, not value)
             update_menu()
 
     def is_checked(self):
@@ -81,8 +81,8 @@ class PytoolsSetDocumentformattingCommand(sublime_plugin.TextCommand):
 class PytoolsSetDiagnosticCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         with load_settings(save=True) as settings:
-            value = settings.get(base_settings.F_DIAGNOSTIC, True)
-            settings.set(base_settings.F_DIAGNOSTIC, not value)
+            value = settings.get(plugin_settings.F_DIAGNOSTIC, True)
+            settings.set(plugin_settings.F_DIAGNOSTIC, not value)
             update_menu()
 
     def is_checked(self):
@@ -92,8 +92,8 @@ class PytoolsSetDiagnosticCommand(sublime_plugin.TextCommand):
 class PytoolsSetValidateCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         with load_settings(save=True) as settings:
-            value = settings.get(base_settings.F_VALIDATE, True)
-            settings.set(base_settings.F_VALIDATE, not value)
+            value = settings.get(plugin_settings.F_VALIDATE, True)
+            settings.set(plugin_settings.F_VALIDATE, not value)
             update_menu()
 
     def is_checked(self):
@@ -103,8 +103,8 @@ class PytoolsSetValidateCommand(sublime_plugin.TextCommand):
 class PytoolsSetDiagnosticpanelCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         with load_settings(save=True) as settings:
-            value = settings.get(base_settings.W_DIAGNOSTIC_PANEL, True)
-            settings.set(base_settings.W_DIAGNOSTIC_PANEL, not value)
+            value = settings.get(plugin_settings.W_DIAGNOSTIC_PANEL, True)
+            settings.set(plugin_settings.W_DIAGNOSTIC_PANEL, not value)
             update_menu()
 
     def is_checked(self):
