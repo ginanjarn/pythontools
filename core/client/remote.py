@@ -222,7 +222,22 @@ def request(
     port: int = 8088,
     timeout: "Optional[float]" = None  # None will blocking
 ) -> str:
+
     """handle socket request
+
+    Parameters:
+        message: str
+            socket message
+
+        host: str
+            target host name
+
+        port: int
+            target port
+
+        timeout: int or None
+            set timeout. socket blocking mode if timeout is None. non blocking if
+            timeout = 0.
 
     Raises:
         InvalidInput
