@@ -162,18 +162,20 @@ class ServerHandler(socketserver.BaseRequestHandler):
             self.finish()
 
     def setup(self) -> None:
-        self.commands[PING] = self.ping
-        self.commands[EXIT] = self.exit
-        self.commands[INITIALIZE] = self.initialize
-        self.commands[CHANGE_WORKPACE] = self.change_workspace
 
-        # features map ++++++++++++++++++++++++++++++++++++++++++
-        self.commands[COMPLETION] = self.complete
-        self.commands[HOVER] = self.hover
-        self.commands[FORMATTING] = self.formatting
-        self.commands[RENAME] = self.rename
-        self.commands[DIAGNOSTIC] = self.get_diagnostic
-        self.commands[VALIDATE] = self.validate_source
+        self.commands = {
+            PING: self.ping,
+            EXIT: self.exit,
+            INITIALIZE: self.initialize,
+            CHANGE_WORKPACE: self.change_workspace,
+            # features map ++++++++++++++++++++++++++++++++++++++++++
+            COMPLETION: self.complete,
+            HOVER: self.hover,
+            FORMATTING: self.formatting,
+            RENAME: self.rename,
+            DIAGNOSTIC: self.get_diagnostic,
+            VALIDATE: self.validate_source,
+        }
 
     def ping(self, params: rpc.Params) -> Any:
         return params
@@ -301,63 +303,63 @@ class ServerHandler(socketserver.BaseRequestHandler):
     def handle_request(self, message: bytes) -> bytes:
         """handle request"""
 
-        resp_message = rpc.ResponseMessage.builder("-1")
+        response_message = rpc.ResponseMessage.builder()
 
         try:
             # parsing requestcontent
             try:
-                req_message = rpc.RequestMessage.from_rpc(
+                request_message = rpc.RequestMessage.from_rpc(
                     TransactionMessage.from_bytes(message).content
                 )
 
             except json.JSONDecodeError as err:
                 raise errors.InvalidRPCMessage(err) from err
 
-            resp_message.id_ = req_message.id_
+            response_message.id_ = request_message.id_
 
         except Exception as err:
             logger.debug("loading message error", exc_info=True)
-            resp_message.error = repr(err)
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            response_message.error = repr(err)
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         try:
             # processing
 
-            results = self.run(req_message.method, req_message.params)
-            resp_message.id_ = req_message.id_
-            resp_message.results = results
+            results = self.run(request_message.method, request_message.params)
+            response_message.id_ = request_message.id_
+            response_message.results = results
 
         except errors.MethodNotFound as err:
             logger.debug("invalid method error : %s", err)
-            resp_message.error = rpc.ResponseError.builder(
+            response_message.error = rpc.ResponseError.builder(
                 rpc.ErrorCode.METHOD_NOT_FOUND_ERROR, message=str(err)
             )
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         except errors.InvalidParams as err:
             logger.debug("invalid params error : %s", err)
-            resp_message.error = rpc.ResponseError.builder(
+            response_message.error = rpc.ResponseError.builder(
                 rpc.ErrorCode.INVALID_PARAMS_ERROR, message=str(err)
             )
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         except errors.InvalidInput as err:
             logger.debug("invalid input error : %s", err)
-            resp_message.error = rpc.ResponseError.builder(
+            response_message.error = rpc.ResponseError.builder(
                 rpc.ErrorCode.INPUT_ERROR, message=str(err)
             )
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         except Exception as err:
             logger.exception("process exception : %s", err)
-            resp_message.error = rpc.ResponseError.builder(
+            response_message.error = rpc.ResponseError.builder(
                 rpc.ErrorCode.INTERNAL_ERROR, message=repr(err)
             )
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
         else:
-            logger.debug(resp_message)
-            return TransactionMessage(resp_message.to_rpc()).to_bytes()
+            logger.debug(response_message)
+            return TransactionMessage(response_message.to_rpc()).to_bytes()
 
     def handle(self) -> None:
         """server handle"""
