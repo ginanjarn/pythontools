@@ -180,7 +180,7 @@ INFO = 3
 HINT = 4
 
 
-class Mark:
+class MarkItem:
     """diagnostic mark item"""
 
     def __init__(
@@ -200,7 +200,7 @@ class Mark:
         )
 
     @classmethod
-    def from_rpc(cls, view: sublime.View, message: str) -> "Mark":
+    def from_rpc(cls, view: sublime.View, message: str) -> "MarkItem":
         try:
             pos = view.text_point(message["line"] - 1, message["column"])
             region = view.line(pos) if message["column"] == 0 else view.word(pos)
@@ -256,7 +256,7 @@ def erase_regions(view: sublime.View, key: str):
 
 
 def mark_document(
-    view: sublime.View, marks: "Iterable[Mark]",
+    view: sublime.View, marks: "Iterable[MarkItem]",
 ):
     # marks in current view
     current_view_mark = [mark for mark in marks if mark.view_id == view.id()]
@@ -277,7 +277,7 @@ def mark_document(
 
 
 def diagnostic_message(
-    diagnostics: "List[Mark]", view: sublime.View
+    diagnostics: "List[MarkItem]", view: sublime.View
 ) -> "Dict[int, str]":
     """get line mapped diagnostic message in current view"""
 

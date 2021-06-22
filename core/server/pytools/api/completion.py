@@ -1,7 +1,8 @@
 """Completion module"""
 
 
-from typing import Dict, Any, List, Iterator
+from typing import Dict, Any, List, Iterator, Optional
+from html import escape
 import logging
 
 from api import rpc, errors
@@ -22,12 +23,24 @@ try:
 
     preload_module(["numpy", "tensorflow", "wx"])
 
+    def document_body(docs: Optional[str]) -> str:
+        """build documentation body"""
+        return escape(docs, quote=False) if docs else ""
+
+    def get_signatures(completion: JediCompletion):
+        signatures = completion.get_signatures()
+        return "" if not signatures else signatures[0].to_string()
+
     def build_rpc(completions: List[JediCompletion]) -> Iterator[Dict[str, Any]]:
         """build rpc content"""
 
         for completion in completions:
             yield rpc.CompletionItem.builder(
-                label=completion.name_with_symbols, type_=completion.type
+                label=completion.name_with_symbols,
+                type_=completion.type,
+                documentation=document_body(get_signatures(completion))
+                if completion.type in ["class", "function"]
+                else "",
             )
 
     def to_rpc(completions: List[JediCompletion]) -> List[Dict[str, Any]]:
