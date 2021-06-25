@@ -123,7 +123,9 @@ class PytoolsOpenTerminal(sublime_plugin.WindowCommand):
         if self.terminal_option.activate_cmd and not emulator.startswith("powershell"):
             exec_command.append(option.activate_cmd)
 
+        env = os.environ.copy()
+
         try:
-            subprocess.Popen(exec_command, cwd=option.cwd)
+            subprocess.Popen(exec_command, cwd=option.cwd, env=env)
         except OSError as err:
             sublime.error_message(str(err))
