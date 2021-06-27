@@ -965,10 +965,13 @@ class Event(sublime_plugin.ViewEventListener):
 
     def on_post_save_async(self) -> None:
 
-        if not PLUGIN_ENABLED:
-            return
+        global PLUGIN_ENABLED
 
         if valid_source(self.view):
+
+            PLUGIN_ENABLED = True
+            set_active_project()
+
             path = self.view.file_name()
             self.view.run_command(
                 "pytools_diagnostic", args={"quick": True, "path": path}
