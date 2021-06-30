@@ -583,7 +583,7 @@ class Completion:
     def to_sublime(self):
         return (
             self.completions,
-            sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS,
+            sublime.INHIBIT_WORD_COMPLETIONS,
         )
 
     @staticmethod
