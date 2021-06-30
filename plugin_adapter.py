@@ -24,26 +24,6 @@ try:
     def convert_kind(kind):
         return kind_map.get(kind, sublime.KIND_AMBIGUOUS)
 
-    class CompletionItem(CompletionItem):
-        def __init__(
-            self,
-            trigger,
-            annotation="",
-            completion="",
-            completion_format=0,
-            kind=0,
-            details="",
-        ):
-
-            super().__init__(
-                trigger,
-                annotation=annotation,
-                completion=completion,
-                completion_format=completion_format,
-                kind=convert_kind(kind),
-                details=details,
-            )
-
 
 except ImportError:
 
@@ -95,3 +75,27 @@ except ImportError:
                     repr(self.details),
                 )
             )
+
+    def convert_kind(kind):
+        return kind
+
+
+class CompletionItem(CompletionItem):
+    def __init__(
+        self,
+        trigger,
+        annotation="",
+        completion="",
+        completion_format=0,
+        kind=0,
+        details="",
+    ):
+
+        super().__init__(
+            trigger,
+            annotation=annotation,
+            completion=completion,
+            completion_format=completion_format,
+            kind=convert_kind(kind),
+            details=details,
+        )
