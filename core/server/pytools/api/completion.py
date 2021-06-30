@@ -29,18 +29,25 @@ try:
 
     def get_signatures(completion: JediCompletion):
         signatures = completion.get_signatures()
-        return "" if not signatures else signatures[0].to_string()
+        return signatures[0].to_string() if signatures else ""
 
     def build_rpc(completions: List[JediCompletion]) -> Iterator[Dict[str, Any]]:
         """build rpc content"""
 
         for completion in completions:
+
+            completion_type = completion.type
+
+            doc = (
+                document_body(get_signatures(completion))
+                if completion_type in ["class", "function"]
+                else ""
+            )
+
             yield rpc.CompletionItem.builder(
                 label=completion.name_with_symbols,
-                type_=completion.type,
-                documentation=document_body(get_signatures(completion))
-                if completion.type in ["class", "function"]
-                else "",
+                type_=completion_type,
+                documentation=doc,
             )
 
     def to_rpc(completions: List[JediCompletion]) -> List[Dict[str, Any]]:
