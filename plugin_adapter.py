@@ -77,7 +77,10 @@ except ImportError:
             self.flags = 0
 
             super().__init__(
-                ("{trigger}\t{kind}".format(trigger=trigger, kind=kind), completion,)
+                (
+                    "{trigger}\t{kind}".format(trigger=trigger, kind=kind),
+                    completion if completion else trigger,
+                )
             )
 
         def __repr__(self):

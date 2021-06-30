@@ -593,7 +593,7 @@ class Completion:
                 trigger=completion["label"],
                 kind=completion["type"],
                 completion=completion["label"],
-                details=completion.get("documentation", ""),
+                annotation=completion.get("annotation", ""),
             )
 
     @classmethod
