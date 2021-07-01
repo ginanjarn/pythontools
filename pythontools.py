@@ -809,7 +809,14 @@ class Event(sublime_plugin.ViewEventListener):
                     return  # cancel
 
                 content = result.results.get("html")
-                link = result.results.get("link")
+
+                try:
+                    link_rpc = result.results.get("link")
+                    link = document.DocumentLink.from_rpc(view, link_rpc)
+
+                except (ValueError, KeyError) as err:
+                    logger.debug("error parse link_rpc: %s", repr(err))
+                    link = None
 
                 # set cache
                 self.temp_docstring_src = source
@@ -820,7 +827,7 @@ class Event(sublime_plugin.ViewEventListener):
                 view,
                 self.decorate(content),
                 location,
-                lambda _: document.open_link(view, link),
+                callback=lambda _: document.open_link(view, link),
                 update=is_updating,
             )
 
@@ -893,9 +900,7 @@ class Event(sublime_plugin.ViewEventListener):
             content = self.cached_diagnostic.get(row)
 
             if content:  # any content
-                document.show_popup(
-                    view, self.decorate(content), point, callback=None, update=True
-                )
+                document.show_popup(view, self.decorate(content), point, callback=None)
 
     def on_hover(self, point, hover_zone):
         """on_hover event"""

@@ -56,28 +56,40 @@ def show_popup(
         )
 
 
-def open_link(view: sublime.View, link: "Dict[str,Any]") -> None:
-    """open link
+class DocumentLink:
+    def __init__(self, path: str, line: int, column: int):
+        self.path = path
+        self.line = line
+        self.column = column
 
-    Params:
-        view: sublime.View)
-            active view
-        
-        link: Dict[str,Any])
-            link contain {"uri":path_to_file,"line":line_pos,"character":column_pos}
-    """
+    @property
+    def path_encoded(self):
+        return "{path}:{line}:{column}".format(
+            path=self.path, line=self.line, column=self.column,
+        )
 
+    @classmethod
+    def from_rpc(cls, view: sublime.View, params: "Dict[str, Any]"):
+
+        if not params:
+            raise ValueError("params empty")
+
+        path = view.file_name() if params["uri"] is None else params["uri"]
+        line = 0 if params["location"]["line"] is None else params["location"]["line"]
+        column = (
+            0
+            if params["location"]["character"] is None
+            else params["location"]["character"] + 1
+        )
+        return cls(path, line, column)
+
+
+def open_link(view: sublime.View, link: DocumentLink) -> None:
+    """open link"""
     if not link:
-        return None
+        return
 
-    path = "{mod_path}:{line}:{character}".format(
-        mod_path=view.file_name() if link["uri"] is None else link["uri"],
-        line=0 if link["location"]["line"] is None else link["location"]["line"],
-        character=0
-        if link["location"]["character"] is None
-        else link["location"]["character"] + 1,
-    )
-    return view.window().open_file(path, sublime.ENCODED_POSITION)
+    return view.window().open_file(link.path_encoded, sublime.ENCODED_POSITION)
 
 
 class Update:
