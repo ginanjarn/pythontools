@@ -1408,10 +1408,11 @@ class PytoolsRenameCommand(sublime_plugin.TextCommand):
 
 
 class PytoolsApplyRpcChangeCommand(sublime_plugin.TextCommand):
-    """Diagnostic command"""
+    """Apply changes command"""
 
     def run(self, edit, changes):
-        document.apply_changes(self.view, edit, changes)
+        document_change = document.DocumentChange.from_rpc(self.view, edit, changes)
+        document_change.apply_changes()
 
 
 class PytoolsStateinfoCommand(sublime_plugin.WindowCommand):

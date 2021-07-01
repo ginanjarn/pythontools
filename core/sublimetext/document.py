@@ -92,40 +92,41 @@ def open_link(view: sublime.View, link: DocumentLink) -> None:
     return view.window().open_file(link.path_encoded, sublime.ENCODED_POSITION)
 
 
-class Update:
-    """Update helper class"""
+class ChangeItem:
+    """ChangeItem hold change data"""
 
-    __slots__ = ["_position_changes", "region", "new_text"]
+    __slots__ = [
+        "position_change",
+        "region",
+        "new_text",
+    ]
 
-    def __init__(self, update_region: sublime.Region, text: str) -> None:
-        self._position_changes = len(text) - update_region.size()
+    def __init__(self, update_region: sublime.Region, text: str):
+        self.position_change = len(text) - update_region.size()
         self.region = update_region
         self.new_text = text
 
-    @property
-    def pos_changes(self) -> int:
-        return self._position_changes
-
-    def adjust_position(self, changes: int) -> None:
-        self.region.a += changes
-        self.region.b += changes
+    def get_region(self, pos_change: int = 0) -> sublime.Region:
+        self.region.a += pos_change
+        self.region.b += pos_change
+        return self.region
 
     def __repr__(self) -> str:
         return "region: {region}, pos changes: {pos_changes}, new text: {new_text}".format(
             region=self.region,
-            pos_changes=self._position_changes,
+            pos_changes=self.position_change,
             new_text=self.new_text,
         )
 
     @classmethod
-    def from_rpc(cls, view: sublime.View, update: "Dict[str, Any]") -> "Update":
+    def from_rpc(cls, view: sublime.View, params: "Dict[str, Any]"):
         """load from rpc"""
 
-        start_line = update["range"]["start"]["line"]
-        start_column = update["range"]["start"]["character"]
-        end_line = update["range"]["end"]["line"]
-        end_column = update["range"]["end"]["character"]
-        new_text = update["newText"]
+        start_line = params["range"]["start"]["line"]
+        start_column = params["range"]["start"]["character"]
+        end_line = params["range"]["end"]["line"]
+        end_column = params["range"]["end"]["character"]
+        new_text = params["newText"]
 
         logger.debug("%s, %s, %s, %s", start_line, start_column, end_line, end_column)
         start = view.text_point(start_line, start_column)
@@ -134,36 +135,35 @@ class Update:
         return cls(region, new_text)
 
 
-def apply_changes(
-    view: sublime.View, edit: sublime.Edit, changes: "List[str, Any]"
-) -> None:
-    """apply changes to active view
+class DocumentChange:
+    """DocumentChange handle documnet change"""
 
-    Argumens
-        changes: str
-            rpc message
-            Ex: [{"range": {"start": {"line":0, "character":0},
-                "end": {"line": 0, "character": 0}}, "newText": ""}]
-    """
+    def __init__(
+        self, view: sublime.View, edit: sublime.Edit, changes: "List[ChangeItem]"
+    ):
+        self.view = view
+        self.edit = edit
+        self.changes = changes
 
-    if not changes:
-        return  # cancel if empty
+    def apply_changes(self):
+        """apply change to active edit"""
 
-    def generate_updates(changes: "Dict[str: Any]") -> "Iterable[Update]":
-        for change in changes:
-            update = Update.from_rpc(view, change)
-            logger.debug(str(update))
-            yield update
+        view = self.view
+        edit = self.edit
+        position_change = 0
 
-    updates = list(generate_updates(changes))  # type: List[Update]
-    pos_changes = 0
+        for change in self.changes:
+            # change: ChangeItem = change
 
-    for update in updates:
-        update.adjust_position(pos_changes)
-        region = update.region
-        view.erase(edit, region)
-        view.insert(edit, region.a, update.new_text)
-        pos_changes += update.pos_changes
+            region = change.get_region(position_change)
+            view.erase(edit, region)
+            view.insert(edit, region.a, change.new_text)
+            position_change += change.position_change
+
+    @classmethod
+    def from_rpc(cls, view: sublime.View, edit: sublime.Edit, params: "Dict[str, Any]"):
+        changes = [ChangeItem.from_rpc(view, change) for change in params]
+        return cls(view, edit, changes)
 
 
 def show_input_panel(
