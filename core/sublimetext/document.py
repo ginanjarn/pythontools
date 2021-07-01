@@ -212,88 +212,105 @@ class MarkItem:
             return cls(view.id(), severity, region, msg)
 
 
-SCOPE = {1: "Invalid", 2: "Invalid", 3: "Comment", 4: "Comment"}
+class Diagnostics:
+    """Diagnostics handle diagnostic message and mark on view"""
 
-ICON_PREFIX = "Packages/pythontools/icons/%s"
-ICON = {
-    1: ICON_PREFIX % "error.png",
-    2: ICON_PREFIX % "warning.png",
-    3: ICON_PREFIX % "info.png",
-    4: ICON_PREFIX % "info.png",
-}
+    def __init__(self, view: sublime.View, marks: "Iterable[MarkItem]"):
+        self.view = view
+        self.marks = [mark for mark in marks if mark.view_id == view.id()]
 
-FLAGS = {
-    1: sublime.DRAW_NO_OUTLINE,
-    2: sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublime.DRAW_SOLID_UNDERLINE,
-    3: sublime.DRAW_NO_FILL
-    | sublime.DRAW_NO_OUTLINE
-    | sublime.DRAW_SOLID_UNDERLINE
-    | sublime.HIDE_ON_MINIMAP,
-    4: sublime.DRAW_NO_FILL
-    | sublime.DRAW_NO_OUTLINE
-    | sublime.DRAW_SQUIGGLY_UNDERLINE
-    | sublime.HIDE_ON_MINIMAP,
-}
+    @staticmethod
+    def get_scope(severity):
+        scope = {1: "Invalid", 2: "Invalid", 3: "Comment", 4: "Comment"}
+        return scope[severity]
 
-KEY_FORMAT = "pytools:%s"
+    @staticmethod
+    def get_icon(severity):
+        icon = {
+            1: "error.png",
+            2: "warning.png",
+            3: "info.png",
+            4: "info.png",
+        }
+        return "Packages/pythontools/icons/%s" % icon[severity]
 
+    @staticmethod
+    def get_flags(severity):
+        flags = {
+            1: sublime.DRAW_NO_OUTLINE,
+            2: sublime.DRAW_NO_FILL
+            | sublime.DRAW_NO_OUTLINE
+            | sublime.DRAW_SOLID_UNDERLINE,
+            3: sublime.DRAW_NO_FILL
+            | sublime.DRAW_NO_OUTLINE
+            | sublime.DRAW_SOLID_UNDERLINE
+            | sublime.HIDE_ON_MINIMAP,
+            4: sublime.DRAW_NO_FILL
+            | sublime.DRAW_NO_OUTLINE
+            | sublime.DRAW_SQUIGGLY_UNDERLINE
+            | sublime.HIDE_ON_MINIMAP,
+        }
+        return flags[severity]
 
-def add_regions(
-    view: sublime.View,
-    key: str,
-    regions: "Iterable[sublime.Region]",
-    scope: str,
-    icon: str,
-    flags: "Any",
-):
-    view.add_regions(
-        key=key, regions=list(regions), scope=scope, icon=icon, flags=flags
-    )
+    @staticmethod
+    def create_region_key(severity):
+        return "pytools:%s" % severity
 
+    @staticmethod
+    def clean_all_marks(view):
+        """clean all marks on view"""
 
-def erase_regions(view: sublime.View, key: str):
-    view.erase_regions(key)
+        for severity in (ERROR, WARNING, INFO, HINT):
+            key = Diagnostics.create_region_key(severity)
+            view.erase_regions(key)
 
+    @staticmethod
+    def _get_regions(
+        marks: "Iterable[MarkItem]", severity: int
+    ) -> "Iterator[sublime.Region]":
+        """get region with severity filtered from marks"""
 
-def mark_document(
-    view: sublime.View, marks: "Iterable[MarkItem]",
-):
-    # marks in current view
-    current_view_mark = [mark for mark in marks if mark.view_id == view.id()]
+        severity_filtered_marks = (mark for mark in marks if mark.severity == severity)
 
-    for severity in [ERROR, WARNING, INFO, HINT]:
-        severity_filtered_mark = (
-            mark for mark in current_view_mark if mark.severity == severity
-        )
+        for mark in severity_filtered_marks:
+            yield mark.region
 
-        # get region on mark
-        regions = (mark.region for mark in severity_filtered_mark)
-        key = KEY_FORMAT % (severity)
+    def mark_document(self):
+        """apply mark to view"""
 
-        erase_regions(view, key)
-        add_regions(
-            view, key, regions, SCOPE[severity], ICON[severity], FLAGS[severity]
-        )
+        view = self.view
+        self.clean_all_marks(view)
 
+        for severity in (ERROR, WARNING, INFO, HINT):
 
-def diagnostic_message(
-    diagnostics: "List[MarkItem]", view: sublime.View
-) -> "Dict[int, str]":
-    """get line mapped diagnostic message in current view"""
+            key = self.create_region_key(severity)
+            regions = self._get_regions(self.marks, severity)
 
-    message_map = {}
+            view.add_regions(
+                key=key,
+                regions=list(regions),
+                scope=self.get_scope(severity),
+                icon=self.get_icon(severity),
+                flags=self.get_flags(severity),
+            )
 
-    for mark in diagnostics:
+    def get_message_map(self) -> "Dict[int, str]":
+        """get line mapped diagnostic message in current view"""
 
-        row, _ = view.rowcol(mark.region.a)
-        message = mark.message
+        view = self.view
+        message_map = {}
 
-        if row in message_map:
-            message_map[row] = "<br>".join([message_map[row], message])
-        else:
-            message_map[row] = message
+        for mark in self.marks:
 
-    return message_map
+            row, _ = view.rowcol(mark.region.a)
+            message = mark.message
+
+            if row in message_map:
+                message_map[row] = "<br>".join([message_map[row], message])
+            else:
+                message_map[row] = message
+
+        return message_map
 
 
 class OutputPanel:

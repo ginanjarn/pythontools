@@ -885,15 +885,9 @@ class Event(sublime_plugin.ViewEventListener):
         else:
             if not self.cached_diagnostic:
                 logger.debug("build message")
-                view_filtered_diagnostic = [
-                    diagnostic
-                    for diagnostic in DIAGNOSTICS
-                    if diagnostic.view_id == view.id()
-                ]
-                diagnostic_message = document.diagnostic_message(
-                    view_filtered_diagnostic, view
-                )
-                self.cached_diagnostic = diagnostic_message
+
+                diagnostic = document.Diagnostics(view, DIAGNOSTICS)
+                self.cached_diagnostic = diagnostic.get_message_map()
 
             row, _ = view.rowcol(point)
             content = self.cached_diagnostic.get(row)
@@ -1070,13 +1064,8 @@ def clear_diagnostic():
     if not valid_source(view):
         return
 
-    for severity in [
-        document.ERROR,
-        document.WARNING,
-        document.INFO,
-        document.HINT,
-    ]:
-        document.erase_regions(view, document.KEY_FORMAT % severity)
+    # clean marks on view
+    document.Diagnostics.clean_all_marks(view)
 
     global DIAGNOSTICS
 
@@ -1188,13 +1177,11 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
 
             DIAGNOSTICS = list(filterfalse(ignored, DIAGNOSTICS))
 
-            diagnostics = []
             for diagnostic in result.results:
-                diagnostics.append(document.MarkItem.from_rpc(view, diagnostic))
+                DIAGNOSTICS.append(document.MarkItem.from_rpc(view, diagnostic))
 
-            logger.debug(diagnostics)
-            DIAGNOSTICS.extend(diagnostics)
-            document.mark_document(view, DIAGNOSTICS)
+            diagnostics = document.Diagnostics(view, DIAGNOSTICS)
+            diagnostics.mark_document()
 
             view.run_command("pytools_show_diagnostic_panel")
 
@@ -1225,19 +1212,14 @@ class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
             )
 
     def show_diagnostic_panel(self):
-        filtered_diagnostics = [
-            diagnostic
-            for diagnostic in DIAGNOSTICS
-            if diagnostic.view_id == self.view.id()
-        ]
 
         window = sublime.active_window()
         view = window.active_view()
-
+        diagnostics = document.Diagnostics(view, DIAGNOSTICS).marks
         output_panel = document.OutputPanel(window, OUTPUT_PANEL_NAME)
 
-        if filtered_diagnostics:
-            output_panel.append(*self.build_message(view, filtered_diagnostics))
+        if diagnostics:
+            output_panel.append(*self.build_message(view, diagnostics))
             output_panel.show()
 
         else:
