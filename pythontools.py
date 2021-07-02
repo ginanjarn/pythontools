@@ -519,9 +519,6 @@ def set_active_project():
 # Diagnostic data holder
 DIAGNOSTICS = []
 
-# output panel name
-OUTPUT_PANEL_NAME = "pytools"
-
 
 class CompletionParams:
     def __init__(self, start, end):
@@ -1038,7 +1035,7 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
             logger.error("format document", exc_info=True)
 
         else:
-            output_panel = document.OutputPanel(view.window(), OUTPUT_PANEL_NAME)
+            output_panel = document.DiagnosticOutputPanel(view.window())
 
             if result.error:  # any error
                 logger.debug(result.error)
@@ -1046,7 +1043,7 @@ class PytoolsFormatCommand(sublime_plugin.TextCommand):
                 output_panel.show()
                 return
 
-            output_panel.hide()
+            output_panel.destroy()
 
             window = sublime.active_window()
 
@@ -1080,7 +1077,7 @@ def clear_diagnostic():
     DIAGNOSTICS = list(filterfalse(ignored, DIAGNOSTICS))
 
     # destroy output panel
-    output_panel = document.OutputPanel(window, OUTPUT_PANEL_NAME)
+    output_panel = document.DiagnosticOutputPanel(window)
     output_panel.destroy()
 
 
@@ -1164,7 +1161,7 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
             logger.debug(err)
 
         else:
-            output_panel = document.OutputPanel(view.window(), OUTPUT_PANEL_NAME)
+            output_panel = document.ErrorOutputPanel(view.window())
 
             if result.error:  # any error
                 logger.debug(result.error)
@@ -1172,7 +1169,7 @@ class PytoolsDiagnosticCommand(sublime_plugin.TextCommand):
                 output_panel.show()
                 return
 
-            output_panel.hide()
+            output_panel.destroy()
 
             global DIAGNOSTICS
 
@@ -1221,14 +1218,14 @@ class PytoolsShowDiagnosticPanelCommand(sublime_plugin.TextCommand):
         window = sublime.active_window()
         view = window.active_view()
         diagnostics = document.Diagnostics(view, DIAGNOSTICS).marks
-        output_panel = document.OutputPanel(window, OUTPUT_PANEL_NAME)
+        output_panel = document.DiagnosticOutputPanel(window)
 
         if diagnostics:
             output_panel.append(*self.build_message(view, diagnostics))
             output_panel.show()
 
         else:
-            output_panel.hide()
+            output_panel.destroy()
 
 
 class PytoolsClearDiagnosticCommand(sublime_plugin.TextCommand):

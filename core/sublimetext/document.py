@@ -328,37 +328,41 @@ class Diagnostics:
 class OutputPanel:
     """Output panel handler"""
 
-    def __init__(self, window: sublime.Window, name: str, reset_message=True):
+    def __init__(self, window: sublime.Window, name: str):
         self.panel_name = name
         self.window = window
-        self.panel = window.get_output_panel(self.panel_name)
-        if not self.panel:
-            self.panel = window.create_output_panel(self.panel_name)
-            self.panel.set_read_only(False)
 
-        if reset_message:
-            self.clear()
+    def get_panel(self):
+        panel = self.window.create_output_panel(self.panel_name)
+        panel.set_read_only(False)
+        return panel
 
-    def append(self, *args):
+    def append(self, *args: str):
         """append message to panel"""
 
-        for message in args:
-            self.panel.run_command(
-                "append", {"characters": message + "\n"},
-            )
-
-    def clear(self):
-        """clear panel message"""
-        self.panel.run_command("clear")
+        panel = self.get_panel()
+        panel.run_command(
+            "append", {"characters": "\n".join(args)},
+        )
 
     def show(self):
         """show panel"""
         self.window.run_command("show_panel", {"panel": "output.%s" % self.panel_name})
 
-    def hide(self):
-        """hide panel"""
-        self.window.run_command("hide_panel", {"panel": "output.%s" % self.panel_name})
-
     def destroy(self):
         """destroy panel"""
         self.window.destroy_output_panel(self.panel_name)
+
+
+class DiagnosticOutputPanel(OutputPanel):
+    """OutputPanel for diagnostic message"""
+
+    def __init__(self, window: sublime.Window):
+        super().__init__(window, name="pythontools_diagnostic")
+
+
+class ErrorOutputPanel(OutputPanel):
+    """OutputPanel for error message"""
+
+    def __init__(self, window: sublime.Window):
+        super().__init__(window, name="pythontools_error")
