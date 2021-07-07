@@ -7,6 +7,7 @@ import threading
 import logging
 import os
 import time
+import re
 from contextlib import contextmanager
 from functools import wraps
 from itertools import filterfalse
@@ -536,31 +537,57 @@ class CompletionParams:
         Raises:
             ValueError
         """
-        word_region = view.word(location)
 
-        start = 0
-        prefix = view.substr(word_region).rstrip()
+        line_region = view.line(location)
+        line_str = view.substr(line_region)[: location - line_region.a]
 
-        def access_member(word_region):
-            return view.substr(sublime.Region(word_region.a - 1, word_region.a)) == "."
+        logger.debug("to complete: %s", repr(line_str))
 
-        if prefix.isidentifier():
-            if word_region.size() > 1:
-                end = word_region.a + 1
-            else:
-                end = location
+        empty_line_pattern = re.findall(r"^(\s*)$", line_str)
+        if empty_line_pattern:
+            logger.debug("line empty pattern")
+            raise ValueError("line empty")
 
-            if access_member(word_region):
-                logger.debug("access member")
-                end = word_region.a
-        else:
-            # only next to dot -> access member
-            if prefix.endswith(".", 0, 1):
-                end = location
-            else:
-                raise ValueError("invalid prefix to complete")
+        cancel_complete_pattern = re.findall(
+            r"^.*(?:class|\s*(?:def|as))\s\w*$", line_str
+        )
+        if cancel_complete_pattern:
+            raise ValueError("cancel complete")
 
-        return cls(start=start, end=end)
+        start_line_pattern = re.findall(r"^(\s*\w)\w*$", line_str)
+        if start_line_pattern:
+            logger.debug("start line pattern")
+            return cls(0, line_region.a + len(start_line_pattern[0]))
+
+        import_pattern = re.findall(
+            r"(^(?:from|import|from .* import) (?:\w+\,\s?)*)\w*$", line_str
+        )
+        if import_pattern:
+            logger.debug("import pattern")
+            return cls(0, line_region.a + len(import_pattern[0]))
+
+        access_member_pattern = re.findall(r"(.*(?:\w+|\)|\])\.)\w*$", line_str)
+        if access_member_pattern:
+            logger.debug("access member pattern")
+            return cls(0, line_region.a + len(access_member_pattern[0]))
+
+        separator_pattern = re.findall(
+            r"^(.*[\s\,\:\(\[\{\+\-\*\/\%\=]\w)\w*$", line_str
+        )
+        if separator_pattern:
+            logger.debug("after separator pattern")
+            return cls(0, line_region.a + len(separator_pattern[0]))
+
+        hanging_separator_pattern = re.findall(
+            r"^(.*[\s\,\:\(\[\{\+\-\*\/\%=]+)$", line_str
+        )
+        if hanging_separator_pattern:
+            logger.debug("hanging separator pattern")
+            raise ValueError("hanging line")
+
+        # default
+        logger.debug("use default location")
+        return cls(0, location)
 
 
 class Completion:
